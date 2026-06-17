@@ -69,8 +69,8 @@ final class ExifToolService {
     /// - Returns: The ExifTool version reported by the bundled script.
     /// - Throws: `ExifToolError` when validation or execution fails.
     nonisolated func version() throws -> String {
-        let exiftoolURL = try bundledExifToolURL()
-        let output = try runExifTool(at: exiftoolURL, arguments: ["-ver"])
+        let outputData = try makeProcessPerFileRunner().run(arguments: ["-ver"])
+        let output = String(data: outputData, encoding: .utf8) ?? ""
         return output.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -79,8 +79,7 @@ final class ExifToolService {
     /// - Returns: Raw JSON data produced by ExifTool.
     /// - Throws: `ExifToolError` when validation or execution fails.
     nonisolated func analyzeFolder(at folderURL: URL) throws -> Data {
-        let exiftoolURL = try bundledExifToolURL()
-        return try runExifToolData(at: exiftoolURL, arguments: ["-json", "-r", folderURL.path])
+        try makeProcessPerFileRunner().run(arguments: ["-json", "-r", folderURL.path])
     }
 
     /// Runs bundled ExifTool once for analysis and AI package export metadata.
@@ -88,14 +87,50 @@ final class ExifToolService {
     /// - Returns: The first unified metadata object produced by ExifTool, or `nil` when no metadata is available.
     /// - Throws: `ExifToolError` when validation or execution fails.
     nonisolated func extractAnalysisMetadata(from fileURL: URL) throws -> ExportPhotoMetadata? {
-        let exiftoolURL = try bundledExifToolURL()
-        let arguments = ExifToolTagWhitelist.analysisExportArguments + [fileURL.path]
-        let data = try runExifToolData(
-            at: exiftoolURL,
-            arguments: arguments
-        )
+        try extractAnalysisMetadata(from: fileURL, using: makeProcessPerFileRunner())
+    }
+
+    /// Runs analysis metadata extraction using a caller-provided runner.
+    /// - Parameters:
+    ///   - fileURL: The file URL to analyze.
+    ///   - runner: The ExifTool runner to use for this request.
+    /// - Returns: The first unified metadata object produced by ExifTool, or `nil` when no metadata is available.
+    /// - Throws: `ExifToolError` when validation or execution fails.
+    nonisolated func extractAnalysisMetadata(
+        from fileURL: URL,
+        using runner: ExifToolRunner
+    ) throws -> ExportPhotoMetadata? {
+        let data = try runner.run(arguments: analysisArguments(for: fileURL))
+        return try decodeAnalysisMetadata(from: data)
+    }
+
+    /// Builds the canonical analysis/export argument list for one file.
+    /// - Parameter fileURL: The file URL to analyze.
+    /// - Returns: ExifTool arguments using grouped `-G1` output.
+    nonisolated func analysisArguments(for fileURL: URL) -> [String] {
+        ExifToolTagWhitelist.analysisExportArguments + [fileURL.path]
+    }
+
+    /// Decodes the canonical analysis/export ExifTool JSON payload.
+    /// - Parameter data: Raw JSON data produced by ExifTool.
+    /// - Returns: The first unified metadata object, or `nil` when none exists.
+    nonisolated func decodeAnalysisMetadata(from data: Data) throws -> ExportPhotoMetadata? {
         let metadata = try JSONDecoder().decode([ExportPhotoMetadata].self, from: data)
         return metadata.first
+    }
+
+    /// Creates the classic process-per-file runner.
+    /// - Returns: A runner that launches ExifTool once for every request.
+    /// - Throws: `ExifToolError` when bundled ExifTool cannot be resolved.
+    nonisolated func makeProcessPerFileRunner() throws -> ProcessPerFileExifToolRunner {
+        try ProcessPerFileExifToolRunner(runtime: runtime())
+    }
+
+    /// Creates a persistent `-stay_open` runner.
+    /// - Returns: A runner backed by one long-lived ExifTool process.
+    /// - Throws: `ExifToolError` or `PersistentExifToolRunnerError` when startup fails.
+    nonisolated func makePersistentRunner() throws -> PersistentExifToolRunner {
+        try PersistentExifToolRunner(runtime: runtime())
     }
 
     /// Returns the bundled ExifTool script path after checking that it exists in the app bundle.
@@ -105,10 +140,10 @@ final class ExifToolService {
         try bundledExifToolURL().path
     }
 
-    /// Resolves the bundled ExifTool script URL and validates the Perl interpreter path.
-    /// - Returns: The URL for the bundled ExifTool script.
-    /// - Throws: `ExifToolError` when ExifTool or Perl cannot be found.
-    nonisolated private func bundledExifToolURL() throws -> URL {
+    /// Resolves the bundled ExifTool runtime used by process runners.
+    /// - Returns: Runtime configuration for ExifTool process execution.
+    /// - Throws: `ExifToolError` when ExifTool, its library, or Perl cannot be found.
+    nonisolated private func runtime() throws -> ExifToolRuntime {
         guard FileManager.default.fileExists(atPath: perlPath) else {
             throw ExifToolError.perlNotFound(path: perlPath)
         }
@@ -119,7 +154,26 @@ final class ExifToolService {
             throw ExifToolError.bundledExecutableNotFound(resourceName: executableResourceName)
         }
 
-        return exiftoolURL
+        let exiftoolDirectoryURL = exiftoolURL.deletingLastPathComponent()
+        let exiftoolLibraryURL = exiftoolDirectoryURL.appendingPathComponent("lib", isDirectory: true)
+
+        guard FileManager.default.fileExists(atPath: exiftoolLibraryURL.path) else {
+            throw ExifToolError.bundledLibraryNotFound(path: exiftoolLibraryURL.path)
+        }
+
+        return ExifToolRuntime(
+            perlURL: URL(fileURLWithPath: perlPath),
+            exiftoolURL: exiftoolURL,
+            workingDirectoryURL: exiftoolDirectoryURL,
+            environment: processEnvironment(perlLibraryURL: exiftoolLibraryURL)
+        )
+    }
+
+    /// Resolves the bundled ExifTool script URL and validates the Perl interpreter path.
+    /// - Returns: The URL for the bundled ExifTool script.
+    /// - Throws: `ExifToolError` when ExifTool or Perl cannot be found.
+    nonisolated private func bundledExifToolURL() throws -> URL {
+        try runtime().exiftoolURL
     }
 
     /// Searches the bundle locations where the ExifTool folder may be copied.
@@ -136,72 +190,6 @@ final class ExifToolService {
         }
 
         return Bundle.main.url(forResource: executableResourceName, withExtension: nil)
-    }
-
-    /// Runs bundled ExifTool and decodes standard output as UTF-8 text.
-    /// - Parameters:
-    ///   - exiftoolURL: The bundled ExifTool script URL.
-    ///   - arguments: The command-line arguments passed to ExifTool.
-    /// - Returns: Standard output decoded as text.
-    /// - Throws: `ExifToolError` when the process fails or output is empty.
-    nonisolated private func runExifTool(at exiftoolURL: URL, arguments: [String]) throws -> String {
-        let outputData = try runExifToolData(at: exiftoolURL, arguments: arguments)
-        return String(data: outputData, encoding: .utf8) ?? ""
-    }
-
-    /// Runs bundled ExifTool through Perl and returns standard output as raw data.
-    /// - Parameters:
-    ///   - exiftoolURL: The bundled ExifTool script URL.
-    ///   - arguments: The command-line arguments passed to ExifTool.
-    /// - Returns: Standard output data.
-    /// - Throws: `ExifToolError` when the process fails or output is empty.
-    nonisolated private func runExifToolData(at exiftoolURL: URL, arguments: [String]) throws -> Data {
-        let process = Process()
-        let standardOutput = Pipe()
-        let standardError = Pipe()
-
-        let exiftoolDirectoryURL = exiftoolURL.deletingLastPathComponent()
-        let exiftoolLibraryURL = exiftoolDirectoryURL.appendingPathComponent("lib", isDirectory: true)
-
-        guard FileManager.default.fileExists(atPath: exiftoolLibraryURL.path) else {
-            throw ExifToolError.bundledLibraryNotFound(path: exiftoolLibraryURL.path)
-        }
-
-        process.executableURL = URL(fileURLWithPath: perlPath)
-        process.arguments = [exiftoolURL.path] + arguments
-        process.currentDirectoryURL = exiftoolDirectoryURL
-        process.environment = processEnvironment(perlLibraryURL: exiftoolLibraryURL)
-        process.standardOutput = standardOutput
-        process.standardError = standardError
-
-        do {
-            try process.run()
-        } catch {
-            throw ExifToolError.processLaunchFailed(
-                path: perlPath,
-                message: error.localizedDescription
-            )
-        }
-
-        process.waitUntilExit()
-
-        let outputData = standardOutput.fileHandleForReading.readDataToEndOfFile()
-        let errorData = standardError.fileHandleForReading.readDataToEndOfFile()
-        let errorMessage = String(data: errorData, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-        guard process.terminationStatus == 0 else {
-            throw ExifToolError.processFailed(
-                exitCode: process.terminationStatus,
-                message: errorMessage.isEmpty ? "No error message was provided." : errorMessage
-            )
-        }
-
-        guard !outputData.isEmpty else {
-            throw ExifToolError.emptyOutput
-        }
-
-        return outputData
     }
 
     /// Builds a process environment that points Perl to the bundled ExifTool library folder.
