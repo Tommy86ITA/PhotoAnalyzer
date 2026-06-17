@@ -259,7 +259,7 @@ struct ContentView: View {
 
             analysisPhase = .generatingContactSheet
             try await Task.detached(priority: .utility) {
-                try exporter.exportContactSheet(
+                try await exporter.exportContactSheet(
                     folderURL: folderURL,
                     sourceFileURLs: folderAnalysisResult.fileURLs,
                     paths: paths

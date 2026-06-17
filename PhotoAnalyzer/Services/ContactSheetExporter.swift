@@ -12,6 +12,7 @@ import UniformTypeIdentifiers
 
 /// Exports a visual contact sheet and matching TSV index for analyzed photos.
 final class ContactSheetExporter {
+    private let maxConcurrentThumbnailLoads = 6
     private let columns = 5
     private let thumbnailSize = CGSize(width: 220, height: 160)
     private let labelHeight: CGFloat = 26
@@ -35,7 +36,8 @@ final class ContactSheetExporter {
         folderURL: URL,
         fileURLs: [URL],
         paths: AIAnalysisPackagePaths
-    ) throws {
+    ) async throws {
+        let thumbnailResults = await loadThumbnailResults(for: fileURLs)
         let rows = max(1, Int(ceil(Double(fileURLs.count) / Double(columns))))
         let cellWidth = thumbnailSize.width
         let cellHeight = thumbnailSize.height + labelHeight
@@ -70,7 +72,9 @@ final class ContactSheetExporter {
         var exportSummary = ContactSheetExportSummary()
         indexRows.reserveCapacity(fileURLs.count)
 
-        for (zeroBasedIndex, fileURL) in fileURLs.enumerated() {
+        for item in thumbnailResults {
+            let zeroBasedIndex = item.index
+            let fileURL = item.fileURL
             let row = zeroBasedIndex / columns
             let column = zeroBasedIndex % columns
             let displayIndex = zeroBasedIndex + 1
@@ -80,7 +84,8 @@ final class ContactSheetExporter {
             let thumbnailResult = drawThumbnail(
                 fileURL: fileURL,
                 index: formattedIndex,
-                in: imageRect
+                in: imageRect,
+                loadedThumbnail: item.thumbnail
             )
             exportSummary.record(thumbnailResult.status)
             drawLabel(index: formattedIndex, in: labelRect)
@@ -106,6 +111,44 @@ final class ContactSheetExporter {
         print(exportSummary.logMessage)
     }
 
+    nonisolated private func loadThumbnailResults(for fileURLs: [URL]) async -> [IndexedThumbnailResult] {
+        let maxPixelSize = max(thumbnailSize.width, thumbnailSize.height) * 2
+        var results: [IndexedThumbnailResult] = []
+        results.reserveCapacity(fileURLs.count)
+
+        var startIndex = 0
+        while startIndex < fileURLs.count {
+            let endIndex = min(startIndex + maxConcurrentThumbnailLoads, fileURLs.count)
+
+            await withTaskGroup(of: IndexedThumbnailResult.self) { group in
+                for index in startIndex..<endIndex {
+                    let fileURL = fileURLs[index]
+                    let thumbnailLoader = self.thumbnailLoader
+                    group.addTask {
+                        let thumbnail = await thumbnailLoader.loadThumbnail(
+                            from: fileURL,
+                            maxPixelSize: maxPixelSize
+                        )
+
+                        return IndexedThumbnailResult(
+                            index: index,
+                            fileURL: fileURL,
+                            thumbnail: thumbnail
+                        )
+                    }
+                }
+
+                for await result in group {
+                    results.append(result)
+                }
+            }
+
+            startIndex = endIndex
+        }
+
+        return results.sorted { $0.index < $1.index }
+    }
+
     nonisolated private func thumbnailRect(row: Int, column: Int, canvasHeight: CGFloat) -> CGRect {
         let cellHeight = thumbnailSize.height + labelHeight
         let x = padding + CGFloat(column) * (thumbnailSize.width + spacing)
@@ -122,11 +165,13 @@ final class ContactSheetExporter {
         return CGRect(x: x, y: labelY, width: thumbnailSize.width, height: labelHeight)
     }
 
-    nonisolated private func drawThumbnail(fileURL: URL, index: String, in rect: CGRect) -> ThumbnailDrawResult {
-        if let thumbnail = thumbnailLoader.loadThumbnail(
-            from: fileURL,
-            maxPixelSize: max(thumbnailSize.width, thumbnailSize.height) * 2
-        ) {
+    nonisolated private func drawThumbnail(
+        fileURL: URL,
+        index: String,
+        in rect: CGRect,
+        loadedThumbnail: ThumbnailLoadResult?
+    ) -> ThumbnailDrawResult {
+        if let thumbnail = loadedThumbnail {
             let image = thumbnail.image
             let targetRect = aspectFitRect(imageSize: image.size, boundingRect: rect)
             image.draw(in: targetRect)
@@ -271,18 +316,27 @@ private struct ContactSheetIndexRow {
     let error: String?
 }
 
+private struct IndexedThumbnailResult {
+    let index: Int
+    let fileURL: URL
+    let thumbnail: ThumbnailLoadResult?
+}
+
 private struct ThumbnailDrawResult {
     let status: ThumbnailStatus
     let error: String?
 }
 
 nonisolated private struct ContactSheetExportSummary {
+    private(set) var quickLookCount = 0
     private(set) var nsImageCount = 0
     private(set) var cgImageSourceCount = 0
     private(set) var unavailableCount = 0
 
     mutating func record(_ status: ThumbnailStatus) {
         switch status {
+        case .quickLook:
+            quickLookCount += 1
         case .nsImage:
             nsImageCount += 1
         case .cgImageSource:
@@ -293,7 +347,7 @@ nonisolated private struct ContactSheetExportSummary {
     }
 
     var logMessage: String {
-        "Contact sheet thumbnails: NSImage=\(nsImageCount), CGImageSource=\(cgImageSourceCount), unavailable=\(unavailableCount)"
+        "Contact sheet thumbnails: QuickLook=\(quickLookCount), NSImage=\(nsImageCount), CGImageSource=\(cgImageSourceCount), unavailable=\(unavailableCount)"
     }
 }
 

@@ -26,7 +26,7 @@ final class AIAnalysisPackageExporter {
         sourceFileURLs: [URL],
         statistics: PhotoStatistics,
         paths: AIAnalysisPackagePaths
-    ) throws -> URL {
+    ) async throws -> URL {
         print("AI package export started")
 
         let paths = try exportDataFiles(
@@ -37,7 +37,7 @@ final class AIAnalysisPackageExporter {
             paths: paths
         )
 
-        try exportContactSheet(
+        try await exportContactSheet(
             folderURL: folderURL,
             sourceFileURLs: sourceFileURLs,
             paths: paths
@@ -117,9 +117,9 @@ final class AIAnalysisPackageExporter {
         folderURL: URL,
         sourceFileURLs: [URL],
         paths: AIAnalysisPackagePaths
-    ) throws {
+    ) async throws {
         let contactSheetExporter = ContactSheetExporter()
-        try contactSheetExporter.exportContactSheet(
+        try await contactSheetExporter.exportContactSheet(
             folderURL: folderURL,
             fileURLs: sourceFileURLs,
             paths: paths
