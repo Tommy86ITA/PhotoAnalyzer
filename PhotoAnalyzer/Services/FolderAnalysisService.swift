@@ -58,20 +58,15 @@ final class FolderAnalysisService {
 
 			for fileURL in fileURLs {
 				do {
-					guard let metadata = try exifToolService.extractMetadata(from: fileURL) else {
+					guard let metadata = try exifToolService.extractAnalysisMetadata(from: fileURL) else {
 						print("No ExifTool metadata returned for \(fileURL.lastPathComponent)")
 						continue
 					}
 
 					let photoInfo = photoInfoMapper.photoInfo(from: metadata, fallbackFileURL: fileURL)
 					photos.append(photoInfo)
+					exportMetadataRecords.append(metadata)
 					analyzedFileURLs.append(fileURL)
-
-					if let exportMetadata = try exifToolService.extractExportMetadata(from: fileURL) {
-						exportMetadataRecords.append(exportMetadata)
-					} else {
-						print("No ExifTool export metadata returned for \(fileURL.lastPathComponent)")
-					}
 				} catch {
 					print("Could not extract ExifTool metadata for \(fileURL.lastPathComponent): \(error.localizedDescription)")
 				}

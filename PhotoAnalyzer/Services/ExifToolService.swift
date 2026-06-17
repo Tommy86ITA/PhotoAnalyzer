@@ -83,28 +83,13 @@ final class ExifToolService {
         return try runExifToolData(at: exiftoolURL, arguments: ["-json", "-r", folderURL.path])
     }
 
-    /// Runs bundled ExifTool on a single file and returns decoded metadata.
+    /// Runs bundled ExifTool once for analysis and AI package export metadata.
     /// - Parameter fileURL: The file URL to analyze.
-    /// - Returns: The first metadata object produced by ExifTool, or `nil` when no metadata is available.
+    /// - Returns: The first unified metadata object produced by ExifTool, or `nil` when no metadata is available.
     /// - Throws: `ExifToolError` when validation or execution fails.
-    nonisolated func extractMetadata(from fileURL: URL) throws -> ExifToolMetadata? {
+    nonisolated func extractAnalysisMetadata(from fileURL: URL) throws -> ExportPhotoMetadata? {
         let exiftoolURL = try bundledExifToolURL()
-        let arguments = ExifToolTagWhitelist.arguments + [fileURL.path]
-        let data = try runExifToolData(
-            at: exiftoolURL,
-            arguments: arguments
-        )
-        let metadata = try JSONDecoder().decode([ExifToolMetadata].self, from: data)
-        return metadata.first
-    }
-
-    /// Runs bundled ExifTool on a single file and returns grouped export metadata.
-    /// - Parameter fileURL: The file URL to analyze.
-    /// - Returns: The first export metadata object produced by ExifTool, or `nil` when no metadata is available.
-    /// - Throws: `ExifToolError` when validation or execution fails.
-    nonisolated func extractExportMetadata(from fileURL: URL) throws -> ExportPhotoMetadata? {
-        let exiftoolURL = try bundledExifToolURL()
-        let arguments = ExifToolTagWhitelist.exportArguments + [fileURL.path]
+        let arguments = ExifToolTagWhitelist.analysisExportArguments + [fileURL.path]
         let data = try runExifToolData(
             at: exiftoolURL,
             arguments: arguments
