@@ -51,6 +51,9 @@ struct ContentView: View {
     /// Whether a folder analysis is currently running.
     @State private var isAnalyzing = false
 
+    /// The currently running analysis task, if any.
+    @State private var analysisTask: Task<Void, Never>?
+
     /// The current operation phase shown at the bottom of the interface.
     @State private var analysisPhase: AnalysisPhase = .ready
 
@@ -66,7 +69,8 @@ struct ContentView: View {
                 includeSubfolders: $includeSubfolders,
                 selectFolder: selectFolder,
                 selectOutputFolder: selectOutputFolder,
-                analyze: analyzeSelectedFolder
+                analyze: analyzeSelectedFolder,
+                cancelAnalysis: cancelAnalysis
             )
 
             HStack(alignment: .top, spacing: Layout.dashboardSpacing) {
@@ -182,9 +186,15 @@ struct ContentView: View {
             return
         }
 
-        Task {
+        let task = Task {
             await analyzeSelectedFolderFiles(in: selectedFolderURL)
         }
+        analysisTask = task
+    }
+
+    /// Cancels the currently running analysis, if any.
+    private func cancelAnalysis() {
+        analysisTask?.cancel()
     }
 
     /// Runs folder analysis and package export for the selected folder.
@@ -204,6 +214,7 @@ struct ContentView: View {
         isAnalyzing = true
         defer {
             isAnalyzing = false
+            analysisTask = nil
         }
 
         statistics = nil
@@ -236,39 +247,47 @@ struct ContentView: View {
             }
         }
 
-        analysisPhase = .scanningFiles
-        let fileURLs = await Task.detached(priority: .utility) {
-            ImageFileScanner().imageFileURLs(in: folderURL, includeSubfolders: shouldIncludeSubfolders)
-        }.value
-
-        guard !fileURLs.isEmpty else {
-            datasetState.supportedFileCount = 0
-            datasetState.analysisStatus = .folderSelected
-            packageState = .initial
-            analysisPhase = .noSupportedFiles
-            return
-        }
-
-        datasetState.supportedFileCount = fileURLs.count
-
-        analysisPhase = .readingMetadata
-        let folderAnalysisResult = await Task.detached(priority: .utility) {
-            await FolderAnalysisService().analyzeFilesWithExportMetadata(fileURLs)
-        }.value
-
-        analysisPhase = .generatingStatistics
-        let generatedStatistics = await Task.detached(priority: .utility) {
-            PhotoStatisticsService().buildStatistics(from: folderAnalysisResult.photos)
-        }.value
-
-        statistics = generatedStatistics
-        datasetState.analyzedPhotoCount = folderAnalysisResult.photos.count
-
-        let exporter = AIAnalysisPackageExporter()
-
         do {
+            analysisPhase = .scanningFiles
+            let fileURLs = try await runCancellableDetached {
+                try Task.checkCancellation()
+                return ImageFileScanner().imageFileURLs(
+                    in: folderURL,
+                    includeSubfolders: shouldIncludeSubfolders
+                )
+            }
+            try Task.checkCancellation()
+
+            guard !fileURLs.isEmpty else {
+                datasetState.supportedFileCount = 0
+                datasetState.analysisStatus = .folderSelected
+                packageState = .initial
+                analysisPhase = .noSupportedFiles
+                return
+            }
+
+            datasetState.supportedFileCount = fileURLs.count
+
+            analysisPhase = .readingMetadata
+            let folderAnalysisResult = try await runCancellableDetached {
+                try await FolderAnalysisService().analyzeFilesWithExportMetadata(fileURLs)
+            }
+            try Task.checkCancellation()
+
+            analysisPhase = .generatingStatistics
+            let generatedStatistics = try await runCancellableDetached {
+                try Task.checkCancellation()
+                return PhotoStatisticsService().buildStatistics(from: folderAnalysisResult.photos)
+            }
+            try Task.checkCancellation()
+
+            statistics = generatedStatistics
+            datasetState.analyzedPhotoCount = folderAnalysisResult.photos.count
+
+            let exporter = AIAnalysisPackageExporter()
+
             analysisPhase = .exportingAIPackage
-            let paths = try await Task.detached(priority: .utility) {
+            let paths = try await runCancellableDetached {
                 try exporter.exportDataFiles(
                     for: folderURL,
                     metadata: folderAnalysisResult.exportMetadata,
@@ -276,27 +295,50 @@ struct ContentView: View {
                     statistics: generatedStatistics,
                     paths: packagePaths
                 )
-            }.value
+            }
 
             analysisPhase = .generatingContactSheet
-            try await Task.detached(priority: .utility) {
+            try await runCancellableDetached {
                 try await exporter.exportContactSheet(
                     folderURL: folderURL,
                     sourceFileURLs: folderAnalysisResult.fileURLs,
                     paths: paths
                 )
-            }.value
+            }
+            try Task.checkCancellation()
 
             datasetState.analysisStatus = .completed
             packageState = AIPackageUIState(packageURL: paths.packageURL)
             analysisPhase = .completed
             loadContactSheetPreview(from: paths.packageURL)
+        } catch is CancellationError {
+            print("Folder analysis cancelled.")
+            statistics = nil
+            contactSheetPreviewImage = nil
+            datasetState.analysisStatus = .cancelled
+            datasetState.analyzedPhotoCount = nil
+            packageState = .initial
+            analysisPhase = .cancelled
         } catch {
             let errorDescription = "\(error.localizedDescription) (\(String(reflecting: error)))"
             print("AI package export failed: \(errorDescription)")
-            datasetState.analysisStatus = .completedWithExportError
+            datasetState.analysisStatus = statistics == nil ? .failed : .completedWithExportError
             packageState = AIPackageUIState(packageURL: packagePaths.packageURL, errorMessage: errorDescription)
-            analysisPhase = .exportFailed
+            analysisPhase = statistics == nil ? .failed : .exportFailed
+        }
+    }
+
+    /// Runs work off the main actor while propagating cancellation to the detached task.
+    private func runCancellableDetached<T>(
+        operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        let task = Task<T, Error>.detached(priority: .utility) {
+            try await operation()
+        }
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
         }
     }
 

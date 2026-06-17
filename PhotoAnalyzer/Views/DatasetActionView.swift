@@ -9,89 +9,137 @@ import SwiftUI
 
 /// Top action area for choosing a dataset and generating an AI package.
 struct DatasetActionView: View {
-    let datasetState: DatasetUIState
-    let outputFolderURL: URL?
-    let isAnalyzing: Bool
-    @Binding var includeSubfolders: Bool
-    let selectFolder: () -> Void
-    let selectOutputFolder: () -> Void
-    let analyze: () -> Void
+	private enum Layout {
+		static let includeSubfoldersColumnWidth: CGFloat = 170
+		static let secondaryActionsColumnWidth: CGFloat = 150
+		static let actionColumnWidth: CGFloat = 280
+	}
 
-    var body: some View {
-        GroupBox("Dataset") {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .center, spacing: 10) {
-                    Image(systemName: datasetState.folderURL == nil ? "folder" : "folder.fill")
-                        .foregroundStyle(.secondary)
+	let datasetState: DatasetUIState
+	let outputFolderURL: URL?
+	let isAnalyzing: Bool
+	@Binding var includeSubfolders: Bool
+	let selectFolder: () -> Void
+	let selectOutputFolder: () -> Void
+	let analyze: () -> Void
+	let cancelAnalysis: () -> Void
 
-                    Text(datasetState.folderPathText)
-                        .font(.system(.body, design: .monospaced))
-                        .foregroundStyle(datasetState.folderURL == nil ? .secondary : .primary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
+	var body: some View {
+		GroupBox("Dataset") {
+			VStack(alignment: .leading, spacing: 12) {
+				HStack(alignment: .center, spacing: 18) {
+					VStack(alignment: .leading, spacing: 10) {
+						pathRow(
+							iconName: datasetState.folderURL == nil ? "folder" : "folder.fill",
+							title: "Source",
+							text: datasetState.folderPathText,
+							path: datasetState.folderURL?.path,
+							isPlaceholder: datasetState.folderURL == nil
+						)
 
-                    CopyPathButton(path: datasetState.folderURL?.path)
+						pathRow(
+							iconName: outputFolderURL == nil ? "tray" : "tray.full",
+							title: "Output",
+							text: outputFolderText,
+							path: outputFolderURL?.path,
+							isPlaceholder: outputFolderURL == nil
+						)
+					}
+					.frame(maxWidth: .infinity, alignment: .leading)
 
-                    Spacer(minLength: 0)
+					VStack(alignment: .leading, spacing: 10) {
+						Toggle("Include subfolders", isOn: $includeSubfolders)
+							.toggleStyle(.checkbox)
+							.disabled(isAnalyzing)
 
-                    Toggle("Include subfolders", isOn: $includeSubfolders)
-                        .toggleStyle(.checkbox)
-                        .disabled(isAnalyzing)
+						Color.clear
+							.frame(height: 24)
+					}
+					.frame(width: Layout.includeSubfoldersColumnWidth, alignment: .leading)
 
-                    Button(action: selectFolder) {
-                        Label("Select Folder", systemImage: "folder.badge.plus")
-                    }
-                    .disabled(isAnalyzing)
+					VStack(alignment: .trailing, spacing: 8) {
+						Button(action: selectFolder) {
+							Label("Select Source", systemImage: "folder.badge.plus")
+						}
+						.disabled(isAnalyzing)
 
-                    Button(action: analyze) {
-                        Label("Analyze & Generate AI Package", systemImage: "shippingbox")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(datasetState.folderURL == nil || datasetState.supportedFileCount == 0 || isAnalyzing)
-                }
+						Button(action: selectOutputFolder) {
+							Label("Select Output", systemImage: "tray.and.arrow.down")
+						}
+						.disabled(isAnalyzing)
+					}
+					.frame(width: Layout.secondaryActionsColumnWidth, alignment: .trailing)
 
-                HStack(alignment: .center, spacing: 10) {
-                    Image(systemName: outputFolderURL == nil ? "tray" : "tray.full")
-                        .foregroundStyle(.secondary)
-                        .frame(width: 18)
+					analysisButton
+						.frame(width: Layout.actionColumnWidth)
+				}
 
-                    Text("Output")
-                        .foregroundStyle(.secondary)
+				Divider()
 
-                    Text(outputFolderText)
-                        .font(.system(.footnote, design: .monospaced))
-                        .foregroundStyle(outputFolderURL == nil ? .secondary : .primary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
+				metricsRow
+			}
+			.padding(.vertical, 2)
+		}
+	}
 
-                    CopyPathButton(path: outputFolderURL?.path)
+	private var outputFolderText: String {
+		outputFolderURL?.path ?? "Same as dataset folder"
+	}
 
-                    Spacer(minLength: 0)
+	private func pathRow(
+		iconName: String,
+		title: String,
+		text: String,
+		path: String?,
+		isPlaceholder: Bool
+	) -> some View {
+		HStack(alignment: .firstTextBaseline, spacing: 10) {
+			Image(systemName: iconName)
+				.foregroundStyle(.secondary)
+				.frame(width: 18)
 
-                    Button(action: selectOutputFolder) {
-                        Label("Select Output Folder", systemImage: "folder.badge.plus")
-                    }
-                    .disabled(isAnalyzing)
-                }
-                .font(.footnote)
+			Text(title)
+				.font(.footnote.weight(.semibold))
+				.foregroundStyle(.secondary)
+				.frame(width: 52, alignment: .leading)
 
-                HStack(alignment: .center, spacing: 14) {
-                    Label("Supported: \(datasetState.supportedFilesText)", systemImage: "photo.stack")
-                    Label("Analyzed: \(datasetState.analyzedPhotosText)", systemImage: "checkmark.circle")
-                    Label(datasetState.analysisStatus.displayText, systemImage: "waveform.path.ecg")
+			Text(text)
+				.font(.system(.body, design: .monospaced))
+				.foregroundStyle(isPlaceholder ? .secondary : .primary)
+				.lineLimit(1)
+				.truncationMode(.middle)
+				.textSelection(.enabled)
 
-                    Spacer(minLength: 0)
-                }
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            }
-            .padding(.vertical, 2)
-        }
-    }
+			CopyPathButton(path: path)
+		}
+	}
 
-    private var outputFolderText: String {
-        outputFolderURL?.path ?? "Same as dataset folder"
-    }
+	private var metricsRow: some View {
+		HStack(alignment: .center, spacing: 14) {
+			Label("Supported: \(datasetState.supportedFilesText)", systemImage: "photo.stack")
+			Label("Analyzed: \(datasetState.analyzedPhotosText)", systemImage: "checkmark.circle")
+			Label(datasetState.analysisStatus.displayText, systemImage: "waveform.path.ecg")
+		}
+		.font(.footnote)
+		.foregroundStyle(.secondary)
+	}
+
+	@ViewBuilder
+	private var analysisButton: some View {
+		if isAnalyzing {
+			Button(role: .cancel, action: cancelAnalysis) {
+				Label("Cancel Analysis", systemImage: "xmark.circle")
+			}
+			.buttonStyle(.borderedProminent)
+			.tint(.red)
+			.frame(maxWidth: .infinity)
+		} else {
+			Button(action: analyze) {
+				Label("Analyze & Generate AI Package", systemImage: "shippingbox")
+			}
+			.buttonStyle(.borderedProminent)
+			.disabled(datasetState.folderURL == nil || datasetState.supportedFileCount == 0)
+			.frame(maxWidth: .infinity)
+		}
+	}
 }

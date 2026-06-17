@@ -46,9 +46,12 @@ final class ContactSheetExporter {
 		fileURLs: [URL],
 		paths: AIAnalysisPackagePaths
 	) async throws {
-		let thumbnailResults = await PerformanceLogger.measure("Loading thumbnails") {
-			await loadThumbnailResults(for: fileURLs)
+		try Task.checkCancellation()
+		let thumbnailResults = try await PerformanceLogger.measure("Loading thumbnails") {
+			try await loadThumbnailResults(for: fileURLs)
 		}
+		try Task.checkCancellation()
+
 		let columns = columnCount(for: fileURLs.count)
 		let rows = max(1, Int(ceil(Double(fileURLs.count) / Double(columns))))
 		let cellWidth = Layout.thumbnailSize.width
@@ -86,6 +89,8 @@ final class ContactSheetExporter {
 		indexRows.reserveCapacity(fileURLs.count)
 
 		for item in thumbnailResults {
+			try Task.checkCancellation()
+
 			autoreleasepool {
 				let zeroBasedIndex = item.index
 				let fileURL = item.fileURL
@@ -121,10 +126,12 @@ final class ContactSheetExporter {
 			throw ContactSheetExporterError.couldNotCreateImage
 		}
 
+		try Task.checkCancellation()
 		try PerformanceLogger.measure("Writing contact_sheet.jpg") {
 			try writeJPEG(image, to: paths.contactSheetURL)
 		}
 
+		try Task.checkCancellation()
 		try PerformanceLogger.measure("Writing index.tsv") {
 			try writeIndex(indexRows, to: paths.indexURL)
 		}
@@ -145,24 +152,28 @@ final class ContactSheetExporter {
 		}
 	}
 
-	nonisolated private func loadThumbnailResults(for fileURLs: [URL]) async -> [IndexedThumbnailResult] {
+	nonisolated private func loadThumbnailResults(for fileURLs: [URL]) async throws -> [IndexedThumbnailResult] {
 		let maxPixelSize = max(Layout.thumbnailSize.width, Layout.thumbnailSize.height) * 2
 		var results: [IndexedThumbnailResult] = []
 		results.reserveCapacity(fileURLs.count)
 
 		var startIndex = 0
 		while startIndex < fileURLs.count {
+			try Task.checkCancellation()
+
 			let endIndex = min(startIndex + Layout.maxConcurrentThumbnailLoads, fileURLs.count)
 
-			await withTaskGroup(of: IndexedThumbnailResult.self) { group in
+			try await withThrowingTaskGroup(of: IndexedThumbnailResult.self) { group in
 				for index in startIndex..<endIndex {
 					let fileURL = fileURLs[index]
 					let thumbnailLoader = self.thumbnailLoader
 					group.addTask {
+						try Task.checkCancellation()
 						let thumbnail = await thumbnailLoader.loadThumbnail(
 							from: fileURL,
 							maxPixelSize: maxPixelSize
 						)
+						try Task.checkCancellation()
 
 						return IndexedThumbnailResult(
 							index: index,
@@ -172,7 +183,7 @@ final class ContactSheetExporter {
 					}
 				}
 
-				for await result in group {
+				for try await result in group {
 					results.append(result)
 				}
 			}

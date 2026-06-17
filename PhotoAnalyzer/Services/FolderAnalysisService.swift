@@ -29,8 +29,8 @@ final class FolderAnalysisService {
 	///   - folderURL: The folder URL selected by the user.
 	///   - includeSubfolders: Whether subfolders should be scanned recursively.
 	/// - Returns: Photo information models created from ExifTool metadata.
-	nonisolated func analyzeFolder(at folderURL: URL, includeSubfolders: Bool = false) async -> [PhotoInfo] {
-		await analyzeFolderWithExportMetadata(at: folderURL, includeSubfolders: includeSubfolders).photos
+	nonisolated func analyzeFolder(at folderURL: URL, includeSubfolders: Bool = false) async throws -> [PhotoInfo] {
+		try await analyzeFolderWithExportMetadata(at: folderURL, includeSubfolders: includeSubfolders).photos
 	}
 
 	/// Builds `PhotoInfo` values and rich export metadata for supported image files.
@@ -41,19 +41,20 @@ final class FolderAnalysisService {
 	nonisolated func analyzeFolderWithExportMetadata(
 		at folderURL: URL,
 		includeSubfolders: Bool = false
-	) async -> FolderAnalysisResult {
+	) async throws -> FolderAnalysisResult {
 		let fileURLs = PerformanceLogger.measure("Scanning files") {
 			ImageFileScanner().imageFileURLs(in: folderURL, includeSubfolders: includeSubfolders)
 		}
 
-		return await analyzeFilesWithExportMetadata(fileURLs)
+		try Task.checkCancellation()
+		return try await analyzeFilesWithExportMetadata(fileURLs)
 	}
 
 	/// Builds `PhotoInfo` values and rich export metadata for supported image files.
 	/// - Parameter fileURLs: Supported image files to analyze in stable order.
 	/// - Returns: Photo information models plus export metadata records.
-	nonisolated func analyzeFilesWithExportMetadata(_ fileURLs: [URL]) async -> FolderAnalysisResult {
-		PerformanceLogger.measure("Reading metadata / ExifTool analysis") {
+	nonisolated func analyzeFilesWithExportMetadata(_ fileURLs: [URL]) async throws -> FolderAnalysisResult {
+		try PerformanceLogger.measure("Reading metadata / ExifTool analysis") {
 			let exifToolService = ExifToolService()
 			let photoInfoMapper = PhotoInfoMapper()
 			let processPerFileRunner: ExifToolRunner
@@ -94,6 +95,8 @@ final class FolderAnalysisService {
 			}
 
 			for fileURL in fileURLs {
+				try Task.checkCancellation()
+
 				do {
 					try appendMetadata(
 						for: fileURL,

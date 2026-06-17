@@ -31,6 +31,7 @@ final class AIAnalysisPackageExporter {
 		try await PerformanceLogger.measure("AI package export total") {
 			print("AI package export started")
 
+			try Task.checkCancellation()
 			let paths = try exportDataFiles(
 				for: folderURL,
 				metadata: metadata,
@@ -39,6 +40,7 @@ final class AIAnalysisPackageExporter {
 				paths: paths
 			)
 
+			try Task.checkCancellation()
 			try await exportContactSheet(
 				folderURL: folderURL,
 				sourceFileURLs: sourceFileURLs,
@@ -66,12 +68,14 @@ final class AIAnalysisPackageExporter {
 		statistics: PhotoStatistics,
 		paths: AIAnalysisPackagePaths
 	) throws -> AIAnalysisPackagePaths {
+		try Task.checkCancellation()
 		print("AI package path: \(paths.packageURL.path)")
 		try FileManager.default.createDirectory(at: paths.packageURL, withIntermediateDirectories: true)
 
 		let jsonWriter = JSONFileWriter()
 
 		try PerformanceLogger.measure("Exporting metadata.json") {
+			try Task.checkCancellation()
 			let indexedMetadata = metadataWithThumbnailIndexes(
 				metadata,
 				sourceFileURLs: sourceFileURLs
@@ -80,10 +84,12 @@ final class AIAnalysisPackageExporter {
 		}
 
 		try PerformanceLogger.measure("Exporting statistics.json") {
+			try Task.checkCancellation()
 			let statisticsPayload = AIStatisticsPayload(statistics: statistics)
 			try jsonWriter.write(statisticsPayload, to: paths.statisticsURL)
 		}
 
+		try Task.checkCancellation()
 		return paths
 	}
 

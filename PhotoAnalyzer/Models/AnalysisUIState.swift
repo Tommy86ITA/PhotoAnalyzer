@@ -12,6 +12,7 @@ enum AnalysisStatus {
     case ready
     case folderSelected
     case analyzing
+    case cancelled
     case completed
     case completedWithExportError
     case failed
@@ -24,6 +25,8 @@ enum AnalysisStatus {
             return "Folder selected"
         case .analyzing:
             return "Analyzing"
+        case .cancelled:
+            return "Cancelled"
         case .completed:
             return "Completed"
         case .completedWithExportError:
@@ -44,6 +47,7 @@ enum AnalysisPhase {
     case generatingStatistics
     case exportingAIPackage
     case generatingContactSheet
+    case cancelled
     case completed
     case exportFailed
     case failed
@@ -66,6 +70,8 @@ enum AnalysisPhase {
             return "Exporting AI package..."
         case .generatingContactSheet:
             return "Generating contact sheet..."
+        case .cancelled:
+            return "Cancelled"
         case .completed:
             return "Package generated"
         case .exportFailed:

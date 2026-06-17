@@ -47,6 +47,10 @@ final class ImageFileScanner {
         }
 
         for fileURL in sortedFileURLs {
+            guard !Task.isCancelled else {
+                return supportedFileURLs
+            }
+
             let resourceValues = try? fileURL.resourceValues(forKeys: fileResourceKeys)
             let isRegularFile = resourceValues?.isRegularFile ?? false
             let isSymbolicLink = resourceValues?.isSymbolicLink ?? false
@@ -85,6 +89,13 @@ final class ImageFileScanner {
         var supportedFileURLs: [URL] = []
 
         for case let fileURL as URL in enumerator {
+            guard !Task.isCancelled else {
+                return supportedFileURLs.sorted {
+                    relativePath(for: $0, relativeTo: folderURL)
+                        .localizedStandardCompare(relativePath(for: $1, relativeTo: folderURL)) == .orderedAscending
+                }
+            }
+
             let resourceValues = try? fileURL.resourceValues(forKeys: fileResourceKeys)
             let isSymbolicLink = resourceValues?.isSymbolicLink ?? false
 
