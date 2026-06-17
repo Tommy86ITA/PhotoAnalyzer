@@ -8,6 +8,7 @@
 import AppKit
 import Foundation
 import ImageIO
+import QuickLookThumbnailing
 
 /// Loads and resizes image thumbnails for contact sheet rendering.
 final class ThumbnailLoader {
@@ -19,11 +20,10 @@ final class ThumbnailLoader {
     ///   - url: The source image URL.
     ///   - maxPixelSize: The maximum width or height in pixels.
     /// - Returns: A loaded thumbnail result, or `nil` when no preview can be created.
-    nonisolated func loadThumbnail(from url: URL, maxPixelSize: CGFloat) -> ThumbnailLoadResult? {
-        let shouldPreferNSImage = ["heic", "heif"].contains(url.pathExtension.lowercased())
-
-        if shouldPreferNSImage {
-            return loadWithNSImage(from: url, maxPixelSize: maxPixelSize)
+    nonisolated func loadThumbnail(from url: URL, maxPixelSize: CGFloat) async -> ThumbnailLoadResult? {
+        if shouldPreferQuickLook(for: url) {
+            return await loadWithQuickLook(from: url, maxPixelSize: maxPixelSize)
+                ?? loadWithNSImage(from: url, maxPixelSize: maxPixelSize)
                 ?? loadWithImageIO(from: url, maxPixelSize: maxPixelSize)
         }
 
@@ -31,12 +31,60 @@ final class ThumbnailLoader {
             ?? loadWithNSImage(from: url, maxPixelSize: maxPixelSize)
     }
 
+    nonisolated private func shouldPreferQuickLook(for url: URL) -> Bool {
+        [
+            "heic", "heif",
+            "dng", "raw", "arw", "cr2", "cr3", "nef", "x3f", "orf", "rw2", "3fr"
+        ].contains(url.pathExtension.lowercased())
+    }
+
+    nonisolated private func loadWithQuickLook(from url: URL, maxPixelSize: CGFloat) async -> ThumbnailLoadResult? {
+        await withCheckedContinuation { continuation in
+            let request = QLThumbnailGenerator.Request(
+                fileAt: url,
+                size: CGSize(width: maxPixelSize, height: maxPixelSize),
+                scale: 1,
+                representationTypes: .thumbnail
+            )
+            request.iconMode = false
+
+            QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { thumbnail, error in
+                guard let thumbnail else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+
+                let nsImage = thumbnail.nsImage
+                guard nsImage.size.width > 0, nsImage.size.height > 0 else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+
+                continuation.resume(
+                    returning: ThumbnailLoadResult(
+                        image: nsImage,
+                        status: .quickLook,
+                        error: error.map { "QuickLook generated thumbnail with warning: \($0.localizedDescription)" }
+                    )
+                )
+            }
+        }
+    }
+
     nonisolated private func loadWithImageIO(from url: URL, maxPixelSize: CGFloat) -> ThumbnailLoadResult? {
-        let options: [CFString: Any] = [
+        var options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceThumbnailMaxPixelSize: Int(maxPixelSize)
         ]
+
+        if #available(macOS 14.0, *) {
+            options[kCGImageSourceDecodeRequest] = kCGImageSourceDecodeToSDR
+        }
+
+        if #available(macOS 15.0, *) {
+            options[kCGImageSourceGenerateImageSpecificLumaScaling] = false
+        }
 
         if let source = CGImageSourceCreateWithURL(url as CFURL, nil) {
             if hasValidPixelSize(source) {
@@ -124,6 +172,7 @@ nonisolated struct ThumbnailLoadResult {
 
 /// The decoder path used to create a thumbnail.
 enum ThumbnailStatus {
+    case quickLook
     case nsImage
     case cgImageSource
     case unavailable
