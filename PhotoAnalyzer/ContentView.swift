@@ -30,6 +30,9 @@ struct ContentView: View {
     /// Optional security-scoped output folder for generated AI packages.
     @State private var selectedOutputFolderURL: URL?
 
+    /// Whether selected dataset subfolders should be scanned.
+    @State private var includeSubfolders = false
+
     /// User-facing state for the selected dataset.
     @State private var datasetState = DatasetUIState.initial
 
@@ -60,6 +63,7 @@ struct ContentView: View {
                 datasetState: datasetState,
                 outputFolderURL: selectedOutputFolderURL,
                 isAnalyzing: isAnalyzing,
+                includeSubfolders: $includeSubfolders,
                 selectFolder: selectFolder,
                 selectOutputFolder: selectOutputFolder,
                 analyze: analyzeSelectedFolder
@@ -103,6 +107,9 @@ struct ContentView: View {
             )
             .frame(width: 0, height: 0)
         )
+        .onChange(of: includeSubfolders) { _, _ in
+            updateSupportedFileCountForSelectedFolder()
+        }
     }
 
     /// Opens a folder picker and stores the selected folder path.
@@ -126,7 +133,7 @@ struct ContentView: View {
         packageState = .initial
         contactSheetPreviewImage = nil
 
-        let supportedFileCount = supportedFileCount(in: url)
+        let supportedFileCount = supportedFileCount(in: url, includeSubfolders: includeSubfolders)
         datasetState = DatasetUIState(
             folderURL: url,
             supportedFileCount: supportedFileCount,
@@ -188,6 +195,7 @@ struct ContentView: View {
         }
 
         let outputFolderURL = selectedOutputFolderURL
+        let shouldIncludeSubfolders = includeSubfolders
         let packagePaths = AIAnalysisPackagePaths(
             datasetFolderURL: folderURL,
             outputFolderURL: outputFolderURL
@@ -230,7 +238,7 @@ struct ContentView: View {
 
         analysisPhase = .scanningFiles
         let fileURLs = await Task.detached(priority: .utility) {
-            ImageFileScanner().imageFileURLs(in: folderURL)
+            ImageFileScanner().imageFileURLs(in: folderURL, includeSubfolders: shouldIncludeSubfolders)
         }.value
 
         guard !fileURLs.isEmpty else {
@@ -293,9 +301,11 @@ struct ContentView: View {
     }
 
     /// Counts supported image files in the selected folder.
-    /// - Parameter folderURL: The selected folder URL.
-    /// - Returns: Number of supported image files found directly inside the folder.
-    private func supportedFileCount(in folderURL: URL) -> Int {
+    /// - Parameters:
+    ///   - folderURL: The selected folder URL.
+    ///   - includeSubfolders: Whether subfolders should be scanned recursively.
+    /// - Returns: Number of supported image files found inside the folder.
+    private func supportedFileCount(in folderURL: URL, includeSubfolders: Bool) -> Int {
         let accessGranted = folderURL.startAccessingSecurityScopedResource()
         defer {
             if accessGranted {
@@ -303,7 +313,25 @@ struct ContentView: View {
             }
         }
 
-        return ImageFileScanner().imageFileURLs(in: folderURL).count
+        return ImageFileScanner().imageFileURLs(in: folderURL, includeSubfolders: includeSubfolders).count
+    }
+
+    /// Recounts supported files after scan options change.
+    private func updateSupportedFileCountForSelectedFolder() {
+        guard !isAnalyzing, let selectedFolderURL else {
+            return
+        }
+
+        statistics = nil
+        packageState = .initial
+        contactSheetPreviewImage = nil
+        datasetState.supportedFileCount = supportedFileCount(
+            in: selectedFolderURL,
+            includeSubfolders: includeSubfolders
+        )
+        datasetState.analyzedPhotoCount = nil
+        datasetState.analysisStatus = .folderSelected
+        analysisPhase = .ready
     }
 
     /// Loads the generated contact sheet preview image.

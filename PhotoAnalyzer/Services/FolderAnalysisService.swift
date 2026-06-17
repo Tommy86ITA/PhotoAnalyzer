@@ -25,18 +25,25 @@ final class FolderAnalysisService {
 	nonisolated init() {}
 
 	/// Builds `PhotoInfo` values for supported image files using ExifTool as the primary metadata source.
-	/// - Parameter folderURL: The folder URL selected by the user.
+	/// - Parameters:
+	///   - folderURL: The folder URL selected by the user.
+	///   - includeSubfolders: Whether subfolders should be scanned recursively.
 	/// - Returns: Photo information models created from ExifTool metadata.
-	nonisolated func analyzeFolder(at folderURL: URL) async -> [PhotoInfo] {
-		await analyzeFolderWithExportMetadata(at: folderURL).photos
+	nonisolated func analyzeFolder(at folderURL: URL, includeSubfolders: Bool = false) async -> [PhotoInfo] {
+		await analyzeFolderWithExportMetadata(at: folderURL, includeSubfolders: includeSubfolders).photos
 	}
 
 	/// Builds `PhotoInfo` values and rich export metadata for supported image files.
-	/// - Parameter folderURL: The folder URL selected by the user.
+	/// - Parameters:
+	///   - folderURL: The folder URL selected by the user.
+	///   - includeSubfolders: Whether subfolders should be scanned recursively.
 	/// - Returns: Photo information models plus export metadata records.
-	nonisolated func analyzeFolderWithExportMetadata(at folderURL: URL) async -> FolderAnalysisResult {
+	nonisolated func analyzeFolderWithExportMetadata(
+		at folderURL: URL,
+		includeSubfolders: Bool = false
+	) async -> FolderAnalysisResult {
 		let fileURLs = PerformanceLogger.measure("Scanning files") {
-			ImageFileScanner().imageFileURLs(in: folderURL)
+			ImageFileScanner().imageFileURLs(in: folderURL, includeSubfolders: includeSubfolders)
 		}
 
 		return await analyzeFilesWithExportMetadata(fileURLs)

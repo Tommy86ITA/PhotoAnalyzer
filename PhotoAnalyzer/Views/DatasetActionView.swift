@@ -12,6 +12,7 @@ struct DatasetActionView: View {
     let datasetState: DatasetUIState
     let outputFolderURL: URL?
     let isAnalyzing: Bool
+    @Binding var includeSubfolders: Bool
     let selectFolder: () -> Void
     let selectOutputFolder: () -> Void
     let analyze: () -> Void
@@ -33,6 +34,10 @@ struct DatasetActionView: View {
                     CopyPathButton(path: datasetState.folderURL?.path)
 
                     Spacer(minLength: 0)
+
+                    Toggle("Include subfolders", isOn: $includeSubfolders)
+                        .toggleStyle(.checkbox)
+                        .disabled(isAnalyzing)
 
                     Button(action: selectFolder) {
                         Label("Select Folder", systemImage: "folder.badge.plus")
