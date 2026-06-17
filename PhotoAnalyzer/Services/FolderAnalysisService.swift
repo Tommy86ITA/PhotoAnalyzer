@@ -49,6 +49,10 @@ final class FolderAnalysisService {
 		PerformanceLogger.measure("Reading metadata / ExifTool analysis") {
 			let exifToolService = ExifToolService()
 			let photoInfoMapper = PhotoInfoMapper()
+			let processPerFileRunner: ExifToolRunner
+			var persistentRunner: PersistentExifToolRunner?
+			var activeRunner: ExifToolRunner
+			var isUsingPersistentRunner = false
 			var photos: [PhotoInfo] = []
 			var exportMetadataRecords: [ExportPhotoMetadata] = []
 			var analyzedFileURLs: [URL] = []
@@ -56,17 +60,65 @@ final class FolderAnalysisService {
 			exportMetadataRecords.reserveCapacity(fileURLs.count)
 			analyzedFileURLs.reserveCapacity(fileURLs.count)
 
+			do {
+				processPerFileRunner = try exifToolService.makeProcessPerFileRunner()
+			} catch {
+				print("Could not initialize ExifTool runner: \(error.localizedDescription)")
+				return FolderAnalysisResult(photos: [], exportMetadata: [], fileURLs: [])
+			}
+
+			do {
+				persistentRunner = try exifToolService.makePersistentRunner()
+				activeRunner = persistentRunner ?? processPerFileRunner
+				isUsingPersistentRunner = true
+				#if DEBUG
+				print("ExifTool runner: stay_open")
+				#endif
+			} catch {
+				activeRunner = processPerFileRunner
+				#if DEBUG
+				print("ExifTool runner: process-per-file")
+				print("Persistent ExifTool runner unavailable; using process-per-file fallback: \(error.localizedDescription)")
+				#endif
+			}
+
+			defer {
+				persistentRunner?.close()
+			}
+
 			for fileURL in fileURLs {
 				do {
-					guard let metadata = try exifToolService.extractAnalysisMetadata(from: fileURL) else {
-						print("No ExifTool metadata returned for \(fileURL.lastPathComponent)")
-						continue
-					}
+					try appendMetadata(
+						for: fileURL,
+						using: activeRunner,
+						exifToolService: exifToolService,
+						photoInfoMapper: photoInfoMapper,
+						photos: &photos,
+						exportMetadataRecords: &exportMetadataRecords,
+						analyzedFileURLs: &analyzedFileURLs
+					)
+				} catch let error as PersistentExifToolRunnerError where isUsingPersistentRunner {
+					#if DEBUG
+					print("Persistent ExifTool runner failed; falling back to process-per-file for the rest of this batch: \(error.localizedDescription)")
+					#endif
+					persistentRunner?.close()
+					persistentRunner = nil
+					activeRunner = processPerFileRunner
+					isUsingPersistentRunner = false
 
-					let photoInfo = photoInfoMapper.photoInfo(from: metadata, fallbackFileURL: fileURL)
-					photos.append(photoInfo)
-					exportMetadataRecords.append(metadata)
-					analyzedFileURLs.append(fileURL)
+					do {
+						try appendMetadata(
+							for: fileURL,
+							using: activeRunner,
+							exifToolService: exifToolService,
+							photoInfoMapper: photoInfoMapper,
+							photos: &photos,
+							exportMetadataRecords: &exportMetadataRecords,
+							analyzedFileURLs: &analyzedFileURLs
+						)
+					} catch {
+						print("Could not extract ExifTool metadata for \(fileURL.lastPathComponent): \(error.localizedDescription)")
+					}
 				} catch {
 					print("Could not extract ExifTool metadata for \(fileURL.lastPathComponent): \(error.localizedDescription)")
 				}
@@ -80,5 +132,25 @@ final class FolderAnalysisService {
 				fileURLs: analyzedFileURLs
 			)
 		}
+	}
+
+	private nonisolated func appendMetadata(
+		for fileURL: URL,
+		using runner: ExifToolRunner,
+		exifToolService: ExifToolService,
+		photoInfoMapper: PhotoInfoMapper,
+		photos: inout [PhotoInfo],
+		exportMetadataRecords: inout [ExportPhotoMetadata],
+		analyzedFileURLs: inout [URL]
+	) throws {
+		guard let metadata = try exifToolService.extractAnalysisMetadata(from: fileURL, using: runner) else {
+			print("No ExifTool metadata returned for \(fileURL.lastPathComponent)")
+			return
+		}
+
+		let photoInfo = photoInfoMapper.photoInfo(from: metadata, fallbackFileURL: fileURL)
+		photos.append(photoInfo)
+		exportMetadataRecords.append(metadata)
+		analyzedFileURLs.append(fileURL)
 	}
 }
