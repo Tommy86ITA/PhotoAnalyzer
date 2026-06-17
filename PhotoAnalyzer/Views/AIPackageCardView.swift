@@ -36,10 +36,10 @@ struct AIPackageCardView: View {
                 )
 
                 VStack(spacing: 8) {
-                    PackageFileRow(fileName: "metadata.json", exists: packageState.metadataExists)
-                    PackageFileRow(fileName: "statistics.json", exists: packageState.statisticsExists)
-                    PackageFileRow(fileName: "contact_sheet.jpg", exists: packageState.contactSheetExists)
-                    PackageFileRow(fileName: "index.tsv", exists: packageState.indexExists)
+                    PackageFileRow(fileName: AIAnalysisPackagePaths.metadataFileName, exists: packageState.metadataExists)
+                    PackageFileRow(fileName: AIAnalysisPackagePaths.statisticsFileName, exists: packageState.statisticsExists)
+                    PackageFileRow(fileName: AIAnalysisPackagePaths.contactSheetFileName, exists: packageState.contactSheetExists)
+                    PackageFileRow(fileName: AIAnalysisPackagePaths.indexFileName, exists: packageState.indexExists)
                 }
                 .padding(.top, 2)
 

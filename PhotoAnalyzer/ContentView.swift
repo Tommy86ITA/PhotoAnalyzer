@@ -10,6 +10,20 @@ import SwiftUI
 
 /// Main interface for the PhotoAnalyzer macOS application.
 struct ContentView: View {
+    private enum Layout {
+        static let contentSpacing: CGFloat = 16
+        static let contentPadding: CGFloat = 26
+        static let mainColumnSpacing: CGFloat = 12
+        static let dashboardSpacing: CGFloat = 18
+        static let windowWidth: CGFloat = 1200
+        static let windowDefaultHeight: CGFloat = 800
+        static let windowMinimumHeight: CGFloat = 820
+        static let contactSheetViewerWidth: CGFloat = 1000
+        static let contactSheetViewerHeight: CGFloat = 720
+        static let contactSheetViewerMinimumWidth: CGFloat = 760
+        static let contactSheetViewerMinimumHeight: CGFloat = 520
+    }
+
     /// The security-scoped folder URL selected by the user.
     @State private var selectedFolderURL: URL?
 
@@ -31,7 +45,6 @@ struct ContentView: View {
     /// Dedicated macOS window for inspecting the generated contact sheet.
     @State private var contactSheetViewerWindow: NSWindow?
 
-
     /// Whether a folder analysis is currently running.
     @State private var isAnalyzing = false
 
@@ -40,7 +53,7 @@ struct ContentView: View {
 
     /// The view hierarchy for the PhotoAnalyzer interface.
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Layout.contentSpacing) {
             AppHeaderView()
 
             DatasetActionView(
@@ -52,8 +65,8 @@ struct ContentView: View {
                 analyze: analyzeSelectedFolder
             )
 
-            HStack(alignment: .top, spacing: 18) {
-                VStack(spacing: 12) {
+            HStack(alignment: .top, spacing: Layout.dashboardSpacing) {
+                VStack(spacing: Layout.mainColumnSpacing) {
                     AIPackageCardView(
                         packageState: packageState,
                         isAnalyzing: isAnalyzing,
@@ -81,12 +94,12 @@ struct ContentView: View {
                 isBusy: isAnalyzing
             )
         }
-        .padding(26)
-        .frame(minWidth: 1200, minHeight: 800, alignment: .topLeading)
+        .padding(Layout.contentPadding)
+        .frame(minWidth: Layout.windowWidth, minHeight: Layout.windowMinimumHeight, alignment: .topLeading)
         .background(
             WindowPlacementView(
-                size: CGSize(width: 1200, height: 800),
-                minimumSize: CGSize(width: 1200, height: 800)
+                size: CGSize(width: Layout.windowWidth, height: Layout.windowDefaultHeight),
+                minimumSize: CGSize(width: Layout.windowWidth, height: Layout.windowMinimumHeight)
             )
             .frame(width: 0, height: 0)
         )
@@ -312,13 +325,21 @@ struct ContentView: View {
         }
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 720),
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: Layout.contactSheetViewerWidth,
+                height: Layout.contactSheetViewerHeight
+            ),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Contact Sheet"
-        window.minSize = NSSize(width: 760, height: 520)
+        window.minSize = NSSize(
+            width: Layout.contactSheetViewerMinimumWidth,
+            height: Layout.contactSheetViewerMinimumHeight
+        )
         window.isReleasedWhenClosed = false
         window.contentViewController = NSHostingController(
             rootView: ContactSheetViewerView(image: contactSheetPreviewImage) { [weak window] in

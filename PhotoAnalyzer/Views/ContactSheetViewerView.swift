@@ -10,6 +10,22 @@ import SwiftUI
 
 /// Dedicated viewer for the generated contact sheet.
 struct ContactSheetViewerView: View {
+    private enum Layout {
+        static let minimumWidth: CGFloat = 900
+        static let minimumHeight: CGFloat = 650
+        static let toolbarSpacing: CGFloat = 12
+        static let toolbarPadding: CGFloat = 16
+        static let zoomSliderWidth: CGFloat = 180
+        static let imagePadding: CGFloat = 24
+        static let minimumVisibleImageLength: CGFloat = 80
+    }
+
+    private enum Zoom {
+        static let minimum = 0.25
+        static let maximum = 2.0
+        static let step = 0.1
+    }
+
     let image: NSImage
     let close: () -> Void
 
@@ -19,12 +35,6 @@ struct ContactSheetViewerView: View {
     @State private var imageOffset = CGSize.zero
     @State private var dragStartOffset: CGSize?
     @State private var viewportSize = CGSize.zero
-
-    private let minimumZoom = 0.25
-    private let maximumZoom = 2.0
-    private let zoomStep = 0.1
-    private let imagePadding: CGFloat = 24
-    private let minimumVisibleImageLength: CGFloat = 80
 
     var body: some View {
         VStack(spacing: 0) {
@@ -63,11 +73,11 @@ struct ContactSheetViewerView: View {
                 }
             }
         }
-        .frame(minWidth: 900, minHeight: 650)
+        .frame(minWidth: Layout.minimumWidth, minHeight: Layout.minimumHeight)
     }
 
     private var toolbar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Layout.toolbarSpacing) {
             Text("Contact Sheet")
                 .font(.headline)
 
@@ -86,9 +96,9 @@ struct ContactSheetViewerView: View {
                     get: { zoom },
                     set: { setZoom($0, preservingViewportCenter: true) }
                 ),
-                in: minimumZoom...maximumZoom
+                in: Zoom.minimum...Zoom.maximum
             )
-                .frame(width: 180)
+                .frame(width: Layout.zoomSliderWidth)
 
             Button {
                 zoomIn()
@@ -111,7 +121,7 @@ struct ContactSheetViewerView: View {
             }
             .keyboardShortcut(.defaultAction)
         }
-        .padding(16)
+        .padding(Layout.toolbarPadding)
     }
 
     private var magnifyGesture: some Gesture {
@@ -161,11 +171,11 @@ struct ContactSheetViewerView: View {
     }
 
     private func zoomIn() {
-        setZoom(zoom + zoomStep, preservingViewportCenter: true)
+        setZoom(zoom + Zoom.step, preservingViewportCenter: true)
     }
 
     private func zoomOut() {
-        setZoom(zoom - zoomStep, preservingViewportCenter: true)
+        setZoom(zoom - Zoom.step, preservingViewportCenter: true)
     }
 
     private func fitToWindow() {
@@ -176,8 +186,8 @@ struct ContactSheetViewerView: View {
             return
         }
 
-        let availableWidth = max(1, viewportSize.width - imagePadding * 2)
-        let availableHeight = max(1, viewportSize.height - imagePadding * 2)
+        let availableWidth = max(1, viewportSize.width - Layout.imagePadding * 2)
+        let availableHeight = max(1, viewportSize.height - Layout.imagePadding * 2)
         let scale = min(
             availableWidth / image.size.width,
             availableHeight / image.size.height
@@ -187,7 +197,7 @@ struct ContactSheetViewerView: View {
     }
 
     private func clampedZoom(_ value: Double) -> Double {
-        min(maximumZoom, max(minimumZoom, value))
+        min(Zoom.maximum, max(Zoom.minimum, value))
     }
 
     private func setZoom(_ value: Double, preservingViewportCenter: Bool) {
@@ -256,7 +266,7 @@ struct ContactSheetViewerView: View {
             return 0
         }
 
-        let minimumVisibleLength = min(minimumVisibleImageLength, contentLength)
+        let minimumVisibleLength = min(Layout.minimumVisibleImageLength, contentLength)
         let maximumOffset = (contentLength + viewportLength) / 2 - minimumVisibleLength
         return min(maximumOffset, max(-maximumOffset, offset))
     }

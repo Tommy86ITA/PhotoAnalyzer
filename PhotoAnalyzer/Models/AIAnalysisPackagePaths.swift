@@ -10,6 +10,10 @@ import Foundation
 /// File locations for a PhotoAnalyzer AI analysis package.
 nonisolated struct AIAnalysisPackagePaths {
     static let folderName = "PhotoAnalyzer_AI_Package"
+    static let metadataFileName = "metadata.json"
+    static let statisticsFileName = "statistics.json"
+    static let contactSheetFileName = "contact_sheet.jpg"
+    static let indexFileName = "index.tsv"
 
     let packageURL: URL
 
@@ -33,19 +37,19 @@ nonisolated struct AIAnalysisPackagePaths {
     }
 
     var metadataURL: URL {
-        packageURL.appendingPathComponent("metadata.json")
+        packageURL.appendingPathComponent(Self.metadataFileName)
     }
 
     var statisticsURL: URL {
-        packageURL.appendingPathComponent("statistics.json")
+        packageURL.appendingPathComponent(Self.statisticsFileName)
     }
 
     var contactSheetURL: URL {
-        packageURL.appendingPathComponent("contact_sheet.jpg")
+        packageURL.appendingPathComponent(Self.contactSheetFileName)
     }
 
     var indexURL: URL {
-        packageURL.appendingPathComponent("index.tsv")
+        packageURL.appendingPathComponent(Self.indexFileName)
     }
 
     private static let timestampFormatter: DateFormatter = {

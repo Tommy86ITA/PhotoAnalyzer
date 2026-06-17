@@ -100,6 +100,12 @@ enum PersistentExifToolRunnerError: Error, LocalizedError {
 /// This first implementation is intentionally sequential: one request is written
 /// and read to completion before the next request is allowed.
 nonisolated final class PersistentExifToolRunner: ExifToolRunner, @unchecked Sendable {
+    private enum Configuration {
+        static let responseTimeout: TimeInterval = 30
+        static let shutdownTimeout: TimeInterval = 2
+        static let shutdownPollInterval: TimeInterval = 0.02
+    }
+
     private final class ResultBox: @unchecked Sendable {
         private let lock = NSLock()
         private var result: Result<Data, Error>?
@@ -130,7 +136,7 @@ nonisolated final class PersistentExifToolRunner: ExifToolRunner, @unchecked Sen
     private var isClosed = false
     private var stderrBuffer = Data()
 
-    init(runtime: ExifToolRuntime, responseTimeout: TimeInterval = 30) throws {
+    init(runtime: ExifToolRuntime, responseTimeout: TimeInterval = Configuration.responseTimeout) throws {
         self.runtime = runtime
         self.responseTimeout = responseTimeout
         try start()
@@ -208,9 +214,9 @@ nonisolated final class PersistentExifToolRunner: ExifToolRunner, @unchecked Sen
             try? standardInput.fileHandleForWriting.write(contentsOf: shutdownData)
             try? standardInput.fileHandleForWriting.close()
 
-            let deadline = Date().addingTimeInterval(2)
+            let deadline = Date().addingTimeInterval(Configuration.shutdownTimeout)
             while process.isRunning && Date() < deadline {
-                Thread.sleep(forTimeInterval: 0.02)
+                Thread.sleep(forTimeInterval: Configuration.shutdownPollInterval)
             }
 
             if process.isRunning {
