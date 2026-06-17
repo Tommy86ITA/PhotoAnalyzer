@@ -20,9 +20,7 @@ final class ThumbnailLoader {
     ///   - maxPixelSize: The maximum width or height in pixels.
     /// - Returns: A loaded thumbnail result, or `nil` when no preview can be created.
     nonisolated func loadThumbnail(from url: URL, maxPixelSize: CGFloat) -> ThumbnailLoadResult? {
-        let shouldPreferNSImage = ["heic", "heif"].contains(url.pathExtension.lowercased())
-
-        if shouldPreferNSImage {
+        if shouldPreferNSImage(for: url) {
             return loadWithNSImage(from: url, maxPixelSize: maxPixelSize)
                 ?? loadWithImageIO(from: url, maxPixelSize: maxPixelSize)
         }
@@ -31,12 +29,24 @@ final class ThumbnailLoader {
             ?? loadWithNSImage(from: url, maxPixelSize: maxPixelSize)
     }
 
+    nonisolated private func shouldPreferNSImage(for url: URL) -> Bool {
+        ["heic", "heif"].contains(url.pathExtension.lowercased())
+    }
+
     nonisolated private func loadWithImageIO(from url: URL, maxPixelSize: CGFloat) -> ThumbnailLoadResult? {
-        let options: [CFString: Any] = [
+        var options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceThumbnailMaxPixelSize: Int(maxPixelSize)
         ]
+
+        if #available(macOS 14.0, *) {
+            options[kCGImageSourceDecodeRequest] = kCGImageSourceDecodeToSDR
+        }
+
+        if #available(macOS 15.0, *) {
+            options[kCGImageSourceGenerateImageSpecificLumaScaling] = false
+        }
 
         if let source = CGImageSourceCreateWithURL(url as CFURL, nil) {
             if hasValidPixelSize(source) {

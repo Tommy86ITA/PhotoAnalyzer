@@ -13,6 +13,9 @@ struct ContentView: View {
     /// The security-scoped folder URL selected by the user.
     @State private var selectedFolderURL: URL?
 
+    /// Optional security-scoped output folder for generated AI packages.
+    @State private var selectedOutputFolderURL: URL?
+
     /// User-facing state for the selected dataset.
     @State private var datasetState = DatasetUIState.initial
 
@@ -42,8 +45,10 @@ struct ContentView: View {
 
             DatasetActionView(
                 datasetState: datasetState,
+                outputFolderURL: selectedOutputFolderURL,
                 isAnalyzing: isAnalyzing,
                 selectFolder: selectFolder,
+                selectOutputFolder: selectOutputFolder,
                 analyze: analyzeSelectedFolder
             )
 
@@ -51,6 +56,7 @@ struct ContentView: View {
                 VStack(spacing: 12) {
                     AIPackageCardView(
                         packageState: packageState,
+                        isAnalyzing: isAnalyzing,
                         openPackage: openPackage,
                         revealPackage: revealPackage
                     )
@@ -117,6 +123,29 @@ struct ContentView: View {
         analysisPhase = .ready
     }
 
+    /// Opens a folder picker and stores the optional AI package output folder.
+    private func selectOutputFolder() {
+        guard !isAnalyzing else {
+            return
+        }
+
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Select Output Folder"
+
+        guard panel.runModal() == .OK, let url = panel.url else {
+            return
+        }
+
+        selectedOutputFolderURL = url
+        packageState = .initial
+        contactSheetPreviewImage = nil
+        analysisPhase = .ready
+    }
+
     /// Starts analysis for the selected folder.
     private func analyzeSelectedFolder() {
         guard !isAnalyzing else {
@@ -145,6 +174,12 @@ struct ContentView: View {
             return
         }
 
+        let outputFolderURL = selectedOutputFolderURL
+        let packagePaths = AIAnalysisPackagePaths(
+            datasetFolderURL: folderURL,
+            outputFolderURL: outputFolderURL
+        )
+
         isAnalyzing = true
         defer {
             isAnalyzing = false
@@ -156,7 +191,7 @@ struct ContentView: View {
         datasetState.analyzedPhotoCount = nil
         packageState = AIPackageUIState(
             status: .generating,
-            packageURL: AIAnalysisPackagePaths(folderURL: folderURL).packageURL,
+            packageURL: packagePaths.packageURL,
             metadataExists: false,
             statisticsExists: false,
             contactSheetExists: false,
@@ -164,14 +199,19 @@ struct ContentView: View {
             errorMessage: nil
         )
 
-        let accessGranted = folderURL.startAccessingSecurityScopedResource()
-        if !accessGranted {
+        let datasetAccessGranted = folderURL.startAccessingSecurityScopedResource()
+        if !datasetAccessGranted {
             print("Warning: security-scoped access was not granted. Continuing anyway.")
         }
 
+        let outputAccessGranted = outputFolderURL?.startAccessingSecurityScopedResource() ?? false
         defer {
-            if accessGranted {
+            if datasetAccessGranted {
                 folderURL.stopAccessingSecurityScopedResource()
+            }
+
+            if outputAccessGranted {
+                outputFolderURL?.stopAccessingSecurityScopedResource()
             }
         }
 
@@ -203,7 +243,6 @@ struct ContentView: View {
         statistics = generatedStatistics
         datasetState.analyzedPhotoCount = folderAnalysisResult.photos.count
 
-        let expectedPackageURL = AIAnalysisPackagePaths(folderURL: folderURL).packageURL
         let exporter = AIAnalysisPackageExporter()
 
         do {
@@ -213,7 +252,8 @@ struct ContentView: View {
                     for: folderURL,
                     metadata: folderAnalysisResult.exportMetadata,
                     sourceFileURLs: folderAnalysisResult.fileURLs,
-                    statistics: generatedStatistics
+                    statistics: generatedStatistics,
+                    paths: packagePaths
                 )
             }.value
 
@@ -234,7 +274,7 @@ struct ContentView: View {
             let errorDescription = "\(error.localizedDescription) (\(String(reflecting: error)))"
             print("AI package export failed: \(errorDescription)")
             datasetState.analysisStatus = .completedWithExportError
-            packageState = AIPackageUIState(packageURL: expectedPackageURL, errorMessage: errorDescription)
+            packageState = AIPackageUIState(packageURL: packagePaths.packageURL, errorMessage: errorDescription)
             analysisPhase = .exportFailed
         }
     }

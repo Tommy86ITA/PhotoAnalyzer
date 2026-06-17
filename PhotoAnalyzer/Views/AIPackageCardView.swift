@@ -10,6 +10,7 @@ import SwiftUI
 /// AI package status and generated file checklist.
 struct AIPackageCardView: View {
     let packageState: AIPackageUIState
+    let isAnalyzing: Bool
     let openPackage: () -> Void
     let revealPackage: () -> Void
 
@@ -55,12 +56,12 @@ struct AIPackageCardView: View {
                     Button(action: openPackage) {
                         Label("Open Package", systemImage: "folder")
                     }
-                    .disabled(!canOpenPackage)
+                    .disabled(!canOpenPackage || isAnalyzing)
 
                     Button(action: revealPackage) {
                         Label("Reveal in Finder", systemImage: "magnifyingglass")
                     }
-                    .disabled(!canOpenPackage)
+                    .disabled(!canOpenPackage || isAnalyzing)
 
                     Spacer(minLength: 0)
                 }

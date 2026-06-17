@@ -24,7 +24,8 @@ final class AIAnalysisPackageExporter {
         for folderURL: URL,
         metadata: [ExportPhotoMetadata],
         sourceFileURLs: [URL],
-        statistics: PhotoStatistics
+        statistics: PhotoStatistics,
+        paths: AIAnalysisPackagePaths
     ) throws -> URL {
         print("AI package export started")
 
@@ -32,7 +33,8 @@ final class AIAnalysisPackageExporter {
             for: folderURL,
             metadata: metadata,
             sourceFileURLs: sourceFileURLs,
-            statistics: statistics
+            statistics: statistics,
+            paths: paths
         )
 
         try exportContactSheet(
@@ -57,9 +59,9 @@ final class AIAnalysisPackageExporter {
         for folderURL: URL,
         metadata: [ExportPhotoMetadata],
         sourceFileURLs: [URL],
-        statistics: PhotoStatistics
+        statistics: PhotoStatistics,
+        paths: AIAnalysisPackagePaths
     ) throws -> AIAnalysisPackagePaths {
-        let paths = AIAnalysisPackagePaths(folderURL: folderURL)
         print("AI package path: \(paths.packageURL.path)")
         try FileManager.default.createDirectory(at: paths.packageURL, withIntermediateDirectories: true)
 
