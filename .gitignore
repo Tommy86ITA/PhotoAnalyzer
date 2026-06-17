@@ -13,8 +13,9 @@ build/
 DerivedData/
 *.hmap
 *.ipa
-*.dSYM.zip
+*.dSYM
 *.dSYM/
+*.dSYM.zip
 
 # Swift Package Manager local state
 .build/
