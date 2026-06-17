@@ -12,12 +12,21 @@ import UniformTypeIdentifiers
 
 /// Exports a visual contact sheet and matching TSV index for analyzed photos.
 final class ContactSheetExporter {
-	private let maxConcurrentThumbnailLoads = 6
-	private let columns = 5
-	private let thumbnailSize = CGSize(width: 220, height: 160)
-	private let labelHeight: CGFloat = 26
-	private let padding: CGFloat = 24
-	private let spacing: CGFloat = 16
+	private enum Layout {
+		nonisolated static let smallDatasetMaximumPhotoCount = 100
+		nonisolated static let mediumDatasetMaximumPhotoCount = 300
+		nonisolated static let largeDatasetMaximumPhotoCount = 600
+		nonisolated static let smallDatasetColumns = 5
+		nonisolated static let mediumDatasetColumns = 6
+		nonisolated static let largeDatasetColumns = 8
+		nonisolated static let extraLargeDatasetColumns = 10
+		nonisolated static let maxConcurrentThumbnailLoads = 6
+		nonisolated static let thumbnailSize = CGSize(width: 220, height: 160)
+		nonisolated static let labelHeight: CGFloat = 26
+		nonisolated static let padding: CGFloat = 24
+		nonisolated static let spacing: CGFloat = 16
+	}
+
 	private let backgroundColor = NSColor.white
 	private let placeholderColor = NSColor(calibratedWhite: 0.88, alpha: 1)
 	private let textColor = NSColor(calibratedWhite: 0.12, alpha: 1)
@@ -40,13 +49,15 @@ final class ContactSheetExporter {
 		let thumbnailResults = await PerformanceLogger.measure("Loading thumbnails") {
 			await loadThumbnailResults(for: fileURLs)
 		}
+		let columns = columnCount(for: fileURLs.count)
 		let rows = max(1, Int(ceil(Double(fileURLs.count) / Double(columns))))
-		let cellWidth = thumbnailSize.width
-		let cellHeight = thumbnailSize.height + labelHeight
+		let cellWidth = Layout.thumbnailSize.width
+		let cellHeight = Layout.thumbnailSize.height + Layout.labelHeight
 		let canvasSize = CGSize(
-			width: padding * 2 + CGFloat(columns) * cellWidth + CGFloat(columns - 1) * spacing,
-			height: padding * 2 + CGFloat(rows) * cellHeight + CGFloat(rows - 1) * spacing
+			width: Layout.padding * 2 + CGFloat(columns) * cellWidth + CGFloat(columns - 1) * Layout.spacing,
+			height: Layout.padding * 2 + CGFloat(rows) * cellHeight + CGFloat(rows - 1) * Layout.spacing
 		)
+		print("Contact sheet layout: columns=\(columns), rows=\(rows), size=\(Int(canvasSize.width))x\(Int(canvasSize.height))")
 
 		guard let context = CGContext(
 			data: nil,
@@ -121,14 +132,27 @@ final class ContactSheetExporter {
 		print(exportSummary.logMessage)
 	}
 
+	nonisolated private func columnCount(for photoCount: Int) -> Int {
+		switch photoCount {
+		case ...Layout.smallDatasetMaximumPhotoCount:
+			return Layout.smallDatasetColumns
+		case ...Layout.mediumDatasetMaximumPhotoCount:
+			return Layout.mediumDatasetColumns
+		case ...Layout.largeDatasetMaximumPhotoCount:
+			return Layout.largeDatasetColumns
+		default:
+			return Layout.extraLargeDatasetColumns
+		}
+	}
+
 	nonisolated private func loadThumbnailResults(for fileURLs: [URL]) async -> [IndexedThumbnailResult] {
-		let maxPixelSize = max(thumbnailSize.width, thumbnailSize.height) * 2
+		let maxPixelSize = max(Layout.thumbnailSize.width, Layout.thumbnailSize.height) * 2
 		var results: [IndexedThumbnailResult] = []
 		results.reserveCapacity(fileURLs.count)
 
 		var startIndex = 0
 		while startIndex < fileURLs.count {
-			let endIndex = min(startIndex + maxConcurrentThumbnailLoads, fileURLs.count)
+			let endIndex = min(startIndex + Layout.maxConcurrentThumbnailLoads, fileURLs.count)
 
 			await withTaskGroup(of: IndexedThumbnailResult.self) { group in
 				for index in startIndex..<endIndex {
@@ -160,19 +184,19 @@ final class ContactSheetExporter {
 	}
 
 	nonisolated private func thumbnailRect(row: Int, column: Int, canvasHeight: CGFloat) -> CGRect {
-		let cellHeight = thumbnailSize.height + labelHeight
-		let x = padding + CGFloat(column) * (thumbnailSize.width + spacing)
-		let cellTop = padding + CGFloat(row) * (cellHeight + spacing)
-		let imageY = canvasHeight - cellTop - thumbnailSize.height
-		return CGRect(x: x, y: imageY, width: thumbnailSize.width, height: thumbnailSize.height)
+		let cellHeight = Layout.thumbnailSize.height + Layout.labelHeight
+		let x = Layout.padding + CGFloat(column) * (Layout.thumbnailSize.width + Layout.spacing)
+		let cellTop = Layout.padding + CGFloat(row) * (cellHeight + Layout.spacing)
+		let imageY = canvasHeight - cellTop - Layout.thumbnailSize.height
+		return CGRect(x: x, y: imageY, width: Layout.thumbnailSize.width, height: Layout.thumbnailSize.height)
 	}
 
 	nonisolated private func labelRect(row: Int, column: Int, canvasHeight: CGFloat) -> CGRect {
-		let cellHeight = thumbnailSize.height + labelHeight
-		let x = padding + CGFloat(column) * (thumbnailSize.width + spacing)
-		let cellTop = padding + CGFloat(row) * (cellHeight + spacing)
+		let cellHeight = Layout.thumbnailSize.height + Layout.labelHeight
+		let x = Layout.padding + CGFloat(column) * (Layout.thumbnailSize.width + Layout.spacing)
+		let cellTop = Layout.padding + CGFloat(row) * (cellHeight + Layout.spacing)
 		let labelY = canvasHeight - cellTop - cellHeight
-		return CGRect(x: x, y: labelY, width: thumbnailSize.width, height: labelHeight)
+		return CGRect(x: x, y: labelY, width: Layout.thumbnailSize.width, height: Layout.labelHeight)
 	}
 
 	nonisolated private func drawThumbnail(
