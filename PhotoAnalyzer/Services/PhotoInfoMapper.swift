@@ -12,34 +12,33 @@ final class PhotoInfoMapper {
     /// Creates a photo information mapper.
     nonisolated init() {}
 
-    /// Builds a `PhotoInfo` model from decoded ExifTool metadata.
+    /// Builds a `PhotoInfo` model from unified export metadata.
     /// - Parameters:
-    ///   - metadata: The decoded ExifTool metadata.
+    ///   - metadata: The decoded grouped ExifTool metadata.
     ///   - fallbackFileURL: The file URL used when ExifTool does not provide a file name.
-    /// - Returns: A photo information model populated from ExifTool tags.
-    nonisolated func photoInfo(from metadata: ExifToolMetadata, fallbackFileURL: URL) -> PhotoInfo {
+    /// - Returns: A photo information model populated from grouped ExifTool tags.
+    nonisolated func photoInfo(from metadata: ExportPhotoMetadata, fallbackFileURL: URL) -> PhotoInfo {
         PhotoInfo(
             fileName: metadata.fileName ?? fallbackFileURL.lastPathComponent,
             captureDate: captureDate(from: metadata),
             cameraMake: metadata.make,
             cameraModel: metadata.model ?? metadata.productName,
             lensModel: metadata.lensModel ?? metadata.lensID,
-            focalLength: ExifToolValueParser.double(from: metadata.focalLength),
-            focalLength35mmEquivalent: ExifToolValueParser.double(from: metadata.focalLengthIn35mmFormat)
-                ?? ExifToolValueParser.double(from: metadata.focalLength35efl),
-            iso: ExifToolValueParser.int(from: metadata.iso),
-            aperture: ExifToolValueParser.double(from: metadata.fNumber),
-            exposureTime: ExifToolValueParser.exposureTime(from: metadata.exposureTime),
-            latitude: GpsValueParser.parseCoordinate(metadata.gpsLatitude),
-            longitude: GpsValueParser.parseCoordinate(metadata.gpsLongitude),
+            focalLength: metadata.focalLength,
+            focalLength35mmEquivalent: metadata.focalLengthIn35mmFormat ?? metadata.focalLength35efl,
+            iso: metadata.iso,
+            aperture: metadata.fNumber,
+            exposureTime: metadata.exposureTime,
+            latitude: metadata.gpsLatitude,
+            longitude: metadata.gpsLongitude,
             photoType: mapPhotoType(from: metadata)
         )
     }
 
-    /// Maps ExifTool metadata to the primary `PhotoType` used by PhotoAnalyzer.
-    /// - Parameter metadata: The decoded ExifTool metadata.
+    /// Maps grouped ExifTool metadata to the primary `PhotoType` used by PhotoAnalyzer.
+    /// - Parameter metadata: The decoded grouped ExifTool metadata.
     /// - Returns: The mapped photo type.
-    nonisolated private func mapPhotoType(from metadata: ExifToolMetadata) -> PhotoType {
+    nonisolated private func mapPhotoType(from metadata: ExportPhotoMetadata) -> PhotoType {
         if metadata.customRendered?.caseInsensitiveCompare("Portrait") == .orderedSame {
             return .portrait
         }
@@ -55,22 +54,26 @@ final class PhotoInfoMapper {
         return .standard
     }
 
-    /// Returns whether ExifTool metadata exposes known HDR gain map indicators.
-    /// - Parameter metadata: The decoded ExifTool metadata.
+    /// Returns whether grouped ExifTool metadata exposes known HDR gain map indicators.
+    /// - Parameter metadata: The decoded grouped ExifTool metadata.
     /// - Returns: `true` when HDR metadata is present.
-    nonisolated private func hasHDRMetadata(_ metadata: ExifToolMetadata) -> Bool {
-        if metadata.hdrGainMapVersion != nil || metadata.hdrGainMapHeadroom != nil {
+    nonisolated private func hasHDRMetadata(_ metadata: ExportPhotoMetadata) -> Bool {
+        if metadata.hdrGainMapVersion != nil || metadata.hdrGainMapHeadroom != nil || metadata.appleHDRHeadroom != nil {
             return true
         }
 
-        return metadata.auxiliaryImageType?
-            .range(of: "hdrgainmap", options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        return [
+            metadata.quickTimeAuxiliaryImageType,
+            metadata.xmpApdiAuxiliaryImageType
+        ].contains { value in
+            value?.range(of: "hdrgainmap", options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }
     }
 
-    /// Reads a capture date from ExifTool date fields.
-    /// - Parameter metadata: The decoded ExifTool metadata.
+    /// Reads a capture date from grouped ExifTool date fields.
+    /// - Parameter metadata: The decoded grouped ExifTool metadata.
     /// - Returns: The parsed date, or `nil` when unavailable.
-    nonisolated private func captureDate(from metadata: ExifToolMetadata) -> Date? {
+    nonisolated private func captureDate(from metadata: ExportPhotoMetadata) -> Date? {
         guard let dateText = metadata.dateTimeOriginal ?? metadata.createDate else {
             return nil
         }

@@ -106,4 +106,7 @@ enum ExifToolTagWhitelist {
 
     /// ExifTool command-line arguments for grouped JSON export metadata extraction.
     nonisolated static let exportArguments: [String] = ["-json", "-G1"] + exportTags.map { "-\($0)" }
+
+    /// ExifTool command-line arguments for the unified analysis/export metadata extraction.
+    nonisolated static let analysisExportArguments: [String] = ["-json", "-G1"] + Array(Set(tags + exportTags)).sorted().map { "-\($0)" }
 }

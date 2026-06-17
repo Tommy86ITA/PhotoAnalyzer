@@ -19,12 +19,15 @@ nonisolated struct ExportPhotoMetadata: Codable, Sendable {
     let imageHeight: Double?
     let make: String?
     let model: String?
+    let productName: String?
     let software: String?
     let createDate: String?
     let dateTimeOriginal: String?
     let lensModel: String?
+    let lensID: String?
     let focalLength: Double?
     let focalLengthIn35mmFormat: Double?
+    let focalLength35efl: Double?
     let digitalZoomRatio: Double?
     let fov: Double?
     let fNumber: Double?
@@ -49,6 +52,8 @@ nonisolated struct ExportPhotoMetadata: Codable, Sendable {
     let appleColorTemperature: Double?
     let customRendered: String?
     let compositeImage: String?
+    let hdrGainMapVersion: String?
+    let hdrGainMapHeadroom: Double?
     let quickTimeAuxiliaryImageType: String?
     let xmpApdiAuxiliaryImageType: String?
     let xmpDepthDataFiltered: String?
@@ -115,12 +120,15 @@ nonisolated struct ExportPhotoMetadata: Codable, Sendable {
         imageHeight = container.lossyDouble(forKeys: ["Composite:ImageHeight", "File:ImageHeight", "ExifIFD:ImageHeight", "ImageHeight"])
         make = container.lossyString(forKeys: ["IFD0:Make", "QuickTime:Make", "Make"])
         model = container.lossyString(forKeys: ["IFD0:Model", "QuickTime:Model", "Model"])
+        productName = container.lossyString(forKeys: ["XMP-drone-dji:ProductName", "MakerNotes:ProductName", "ProductName"])
         software = container.lossyString(forKeys: ["IFD0:Software", "QuickTime:Software", "Software"])
         createDate = container.lossyString(forKeys: ["ExifIFD:CreateDate", "QuickTime:CreateDate", "CreateDate"])
         dateTimeOriginal = container.lossyString(forKeys: ["ExifIFD:DateTimeOriginal", "DateTimeOriginal"])
         lensModel = container.lossyString(forKeys: ["ExifIFD:LensModel", "Composite:LensID", "LensModel"])
+        lensID = container.lossyString(forKeys: ["Composite:LensID", "MakerNotes:LensID", "LensID"])
         focalLength = container.lossyDouble(forKeys: ["ExifIFD:FocalLength", "FocalLength"])
         focalLengthIn35mmFormat = container.lossyDouble(forKeys: ["ExifIFD:FocalLengthIn35mmFormat", "Composite:FocalLength35efl", "FocalLengthIn35mmFormat"])
+        focalLength35efl = container.lossyDouble(forKeys: ["Composite:FocalLength35efl", "FocalLength35efl"])
         digitalZoomRatio = container.lossyDouble(forKeys: ["ExifIFD:DigitalZoomRatio", "DigitalZoomRatio"])
         fov = container.lossyDouble(forKeys: ["Composite:FOV", "FOV"])
         fNumber = container.lossyDouble(forKeys: ["ExifIFD:FNumber", "FNumber"])
@@ -145,6 +153,8 @@ nonisolated struct ExportPhotoMetadata: Codable, Sendable {
         appleColorTemperature = container.lossyDouble(forKeys: ["Apple:ColorTemperature", "ColorTemperature"])
         customRendered = container.lossyString(forKeys: ["ExifIFD:CustomRendered", "CustomRendered"])
         compositeImage = container.lossyString(forKeys: ["ExifIFD:CompositeImage", "CompositeImage"])
+        hdrGainMapVersion = container.lossyString(forKeys: ["Apple:HDRGainMapVersion", "HDRGainMapVersion"])
+        hdrGainMapHeadroom = container.lossyDouble(forKeys: ["Apple:HDRGainMapHeadroom", "HDRGainMapHeadroom"])
         quickTimeAuxiliaryImageType = container.lossyString(forKeys: ["QuickTime:AuxiliaryImageType", "AuxiliaryImageType"])
         xmpApdiAuxiliaryImageType = container.lossyString(forKeys: ["XMP-apdi:AuxiliaryImageType"])
         xmpDepthDataFiltered = container.lossyString(forKeys: ["XMP-depthData:Filtered"])
