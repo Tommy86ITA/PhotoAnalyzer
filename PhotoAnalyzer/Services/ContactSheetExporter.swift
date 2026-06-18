@@ -12,21 +12,6 @@ import UniformTypeIdentifiers
 
 /// Exports a visual contact sheet and matching TSV index for analyzed photos.
 final class ContactSheetExporter {
-	private enum Layout {
-		nonisolated static let smallDatasetMaximumPhotoCount = 100
-		nonisolated static let mediumDatasetMaximumPhotoCount = 300
-		nonisolated static let largeDatasetMaximumPhotoCount = 600
-		nonisolated static let smallDatasetColumns = 5
-		nonisolated static let mediumDatasetColumns = 6
-		nonisolated static let largeDatasetColumns = 8
-		nonisolated static let extraLargeDatasetColumns = 10
-		nonisolated static let maxConcurrentThumbnailLoads = 6
-		nonisolated static let thumbnailSize = CGSize(width: 220, height: 160)
-		nonisolated static let labelHeight: CGFloat = 26
-		nonisolated static let padding: CGFloat = 24
-		nonisolated static let spacing: CGFloat = 16
-	}
-
 	private let backgroundColor = NSColor.white
 	private let placeholderColor = NSColor(calibratedWhite: 0.88, alpha: 1)
 	private let textColor = NSColor(calibratedWhite: 0.12, alpha: 1)
@@ -52,15 +37,71 @@ final class ContactSheetExporter {
 		}
 		try Task.checkCancellation()
 
-		let columns = columnCount(for: fileURLs.count)
-		let rows = max(1, Int(ceil(Double(fileURLs.count) / Double(columns))))
-		let cellWidth = Layout.thumbnailSize.width
-		let cellHeight = Layout.thumbnailSize.height + Layout.labelHeight
+		let columns = try columnCount(for: fileURLs.count)
+		let rowsPerSheet = ContactSheetLayout.maximumRowsPerSheet
+		let itemsPerSheet = max(1, columns * rowsPerSheet)
+		let sheetCount = max(1, Int(ceil(Double(thumbnailResults.count) / Double(itemsPerSheet))))
+		var indexRows: [ContactSheetIndexRow] = []
+		var exportSummary = ContactSheetExportSummary()
+		indexRows.reserveCapacity(fileURLs.count)
+		try removeExistingContactSheets(in: paths.packageURL)
+
+		for sheetIndex in 0..<sheetCount {
+			try Task.checkCancellation()
+			let pageStart = sheetIndex * itemsPerSheet
+			let pageEnd = min(pageStart + itemsPerSheet, thumbnailResults.count)
+			let pageResults = Array(thumbnailResults[pageStart..<pageEnd])
+			let sheetFileName = sheetCount == 1
+				? AIAnalysisPackagePaths.contactSheetFileName
+				: ContactSheetLayout.pageFileName(sheetIndex + 1)
+			let sheetURL = sheetCount == 1
+				? paths.contactSheetURL
+				: paths.packageURL.appendingPathComponent(sheetFileName)
+
+			let pageRows = try renderContactSheetPage(
+				pageResults,
+				columns: columns,
+				sheetFileName: sheetFileName,
+				outputURL: sheetURL,
+				exportSummary: &exportSummary
+			)
+			indexRows.append(contentsOf: pageRows)
+
+			if sheetIndex == 0 && sheetCount > 1 {
+				try? FileManager.default.removeItem(at: paths.contactSheetURL)
+				try FileManager.default.copyItem(at: sheetURL, to: paths.contactSheetURL)
+			}
+		}
+
+		try Task.checkCancellation()
+		try PerformanceLogger.measure("Writing index.tsv") {
+			try writeIndex(indexRows, to: paths.indexURL)
+		}
+
+		print("Contact sheet pages: \(sheetCount)")
+		print(exportSummary.logMessage)
+	}
+
+	nonisolated private func renderContactSheetPage(
+		_ thumbnailResults: [IndexedThumbnailResult],
+		columns: Int,
+		sheetFileName: String,
+		outputURL: URL,
+		exportSummary: inout ContactSheetExportSummary
+	) throws -> [ContactSheetIndexRow] {
+		let rows = max(1, Int(ceil(Double(thumbnailResults.count) / Double(columns))))
+		let cellWidth = ContactSheetLayout.thumbnailSize.width
+		let cellHeight = ContactSheetLayout.thumbnailSize.height + ContactSheetLayout.labelHeight
 		let canvasSize = CGSize(
-			width: Layout.padding * 2 + CGFloat(columns) * cellWidth + CGFloat(columns - 1) * Layout.spacing,
-			height: Layout.padding * 2 + CGFloat(rows) * cellHeight + CGFloat(rows - 1) * Layout.spacing
+			width: ContactSheetLayout.padding * 2 + CGFloat(columns) * cellWidth + CGFloat(columns - 1) * ContactSheetLayout.spacing,
+			height: ContactSheetLayout.padding * 2 + CGFloat(rows) * cellHeight + CGFloat(rows - 1) * ContactSheetLayout.spacing
 		)
-		print("Contact sheet layout: columns=\(columns), rows=\(rows), size=\(Int(canvasSize.width))x\(Int(canvasSize.height))")
+		print("Contact sheet page: file=\(sheetFileName), columns=\(columns), rows=\(rows), size=\(Int(canvasSize.width))x\(Int(canvasSize.height))")
+
+		guard canvasSize.width <= ContactSheetLayout.maximumJPEGDimension,
+			  canvasSize.height <= ContactSheetLayout.maximumJPEGDimension else {
+			throw ContactSheetExporterError.contactSheetPageTooLarge(sheetFileName)
+		}
 
 		guard let context = CGContext(
 			data: nil,
@@ -85,18 +126,16 @@ final class ContactSheetExporter {
 		NSRect(origin: .zero, size: canvasSize).fill()
 
 		var indexRows: [ContactSheetIndexRow] = []
-		var exportSummary = ContactSheetExportSummary()
-		indexRows.reserveCapacity(fileURLs.count)
+		indexRows.reserveCapacity(thumbnailResults.count)
 
-		for item in thumbnailResults {
+		for (pageOffset, item) in thumbnailResults.enumerated() {
 			try Task.checkCancellation()
 
 			autoreleasepool {
-				let zeroBasedIndex = item.index
 				let fileURL = item.fileURL
-				let row = zeroBasedIndex / columns
-				let column = zeroBasedIndex % columns
-				let displayIndex = zeroBasedIndex + 1
+				let row = pageOffset / columns
+				let column = pageOffset % columns
+				let displayIndex = item.index + 1
 				let imageRect = thumbnailRect(row: row, column: column, canvasHeight: canvasSize.height)
 				let labelRect = labelRect(row: row, column: column, canvasHeight: canvasSize.height)
 				let formattedIndex = formattedIndex(displayIndex)
@@ -112,6 +151,7 @@ final class ContactSheetExporter {
 				indexRows.append(
 					ContactSheetIndexRow(
 						index: formattedIndex,
+						sheet: sheetFileName,
 						fileName: fileURL.lastPathComponent,
 						sourceFile: fileURL.path,
 						row: row + 1,
@@ -127,33 +167,48 @@ final class ContactSheetExporter {
 		}
 
 		try Task.checkCancellation()
-		try PerformanceLogger.measure("Writing contact_sheet.jpg") {
-			try writeJPEG(image, to: paths.contactSheetURL)
+		try PerformanceLogger.measure("Writing \(sheetFileName)") {
+			try writeJPEG(image, to: outputURL)
 		}
 
-		try Task.checkCancellation()
-		try PerformanceLogger.measure("Writing index.tsv") {
-			try writeIndex(indexRows, to: paths.indexURL)
-		}
-
-		print(exportSummary.logMessage)
+		return indexRows
 	}
 
-	nonisolated private func columnCount(for photoCount: Int) -> Int {
-		switch photoCount {
-		case ...Layout.smallDatasetMaximumPhotoCount:
-			return Layout.smallDatasetColumns
-		case ...Layout.mediumDatasetMaximumPhotoCount:
-			return Layout.mediumDatasetColumns
-		case ...Layout.largeDatasetMaximumPhotoCount:
-			return Layout.largeDatasetColumns
-		default:
-			return Layout.extraLargeDatasetColumns
+	nonisolated private func columnCount(for photoCount: Int) throws -> Int {
+		let preferredColumns = ContactSheetLayout.columnCount(for: photoCount)
+
+		let maximumColumnsForSafeWidth = max(
+			1,
+			Int((ContactSheetLayout.maximumJPEGDimension - ContactSheetLayout.padding * 2 + ContactSheetLayout.spacing) / (ContactSheetLayout.thumbnailSize.width + ContactSheetLayout.spacing))
+		)
+
+		guard preferredColumns <= maximumColumnsForSafeWidth else {
+			throw ContactSheetExporterError.contactSheetTooLarge(photoCount)
+		}
+
+		return preferredColumns
+	}
+
+	nonisolated private func removeExistingContactSheets(in packageURL: URL) throws {
+		let fileManager = FileManager.default
+		let existingFiles = try fileManager.contentsOfDirectory(
+			at: packageURL,
+			includingPropertiesForKeys: nil
+		)
+
+		for fileURL in existingFiles {
+			let fileName = fileURL.lastPathComponent
+			let isLegacySheet = fileName == AIAnalysisPackagePaths.contactSheetFileName
+			let isPaginatedSheet = fileName.hasPrefix("contact_sheet_") && fileName.hasSuffix(".jpg")
+
+			if isLegacySheet || isPaginatedSheet {
+				try fileManager.removeItem(at: fileURL)
+			}
 		}
 	}
 
 	nonisolated private func loadThumbnailResults(for fileURLs: [URL]) async throws -> [IndexedThumbnailResult] {
-		let maxPixelSize = max(Layout.thumbnailSize.width, Layout.thumbnailSize.height) * 2
+		let maxPixelSize = max(ContactSheetLayout.thumbnailSize.width, ContactSheetLayout.thumbnailSize.height) * 2
 		var results: [IndexedThumbnailResult] = []
 		results.reserveCapacity(fileURLs.count)
 
@@ -161,7 +216,7 @@ final class ContactSheetExporter {
 		while startIndex < fileURLs.count {
 			try Task.checkCancellation()
 
-			let endIndex = min(startIndex + Layout.maxConcurrentThumbnailLoads, fileURLs.count)
+			let endIndex = min(startIndex + ContactSheetLayout.maxConcurrentThumbnailLoads, fileURLs.count)
 
 			try await withThrowingTaskGroup(of: IndexedThumbnailResult.self) { group in
 				for index in startIndex..<endIndex {
@@ -195,19 +250,19 @@ final class ContactSheetExporter {
 	}
 
 	nonisolated private func thumbnailRect(row: Int, column: Int, canvasHeight: CGFloat) -> CGRect {
-		let cellHeight = Layout.thumbnailSize.height + Layout.labelHeight
-		let x = Layout.padding + CGFloat(column) * (Layout.thumbnailSize.width + Layout.spacing)
-		let cellTop = Layout.padding + CGFloat(row) * (cellHeight + Layout.spacing)
-		let imageY = canvasHeight - cellTop - Layout.thumbnailSize.height
-		return CGRect(x: x, y: imageY, width: Layout.thumbnailSize.width, height: Layout.thumbnailSize.height)
+		let cellHeight = ContactSheetLayout.thumbnailSize.height + ContactSheetLayout.labelHeight
+		let x = ContactSheetLayout.padding + CGFloat(column) * (ContactSheetLayout.thumbnailSize.width + ContactSheetLayout.spacing)
+		let cellTop = ContactSheetLayout.padding + CGFloat(row) * (cellHeight + ContactSheetLayout.spacing)
+		let imageY = canvasHeight - cellTop - ContactSheetLayout.thumbnailSize.height
+		return CGRect(x: x, y: imageY, width: ContactSheetLayout.thumbnailSize.width, height: ContactSheetLayout.thumbnailSize.height)
 	}
 
 	nonisolated private func labelRect(row: Int, column: Int, canvasHeight: CGFloat) -> CGRect {
-		let cellHeight = Layout.thumbnailSize.height + Layout.labelHeight
-		let x = Layout.padding + CGFloat(column) * (Layout.thumbnailSize.width + Layout.spacing)
-		let cellTop = Layout.padding + CGFloat(row) * (cellHeight + Layout.spacing)
+		let cellHeight = ContactSheetLayout.thumbnailSize.height + ContactSheetLayout.labelHeight
+		let x = ContactSheetLayout.padding + CGFloat(column) * (ContactSheetLayout.thumbnailSize.width + ContactSheetLayout.spacing)
+		let cellTop = ContactSheetLayout.padding + CGFloat(row) * (cellHeight + ContactSheetLayout.spacing)
 		let labelY = canvasHeight - cellTop - cellHeight
-		return CGRect(x: x, y: labelY, width: Layout.thumbnailSize.width, height: Layout.labelHeight)
+		return CGRect(x: x, y: labelY, width: ContactSheetLayout.thumbnailSize.width, height: ContactSheetLayout.labelHeight)
 	}
 
 	nonisolated private func drawThumbnail(
@@ -303,7 +358,7 @@ final class ContactSheetExporter {
 		}
 
 		let options: [CFString: Any] = [
-			kCGImageDestinationLossyCompressionQuality: 0.88
+			kCGImageDestinationLossyCompressionQuality: ContactSheetLayout.jpegCompressionQuality
 		]
 		CGImageDestinationAddImage(destination, image, options as CFDictionary)
 
@@ -313,10 +368,11 @@ final class ContactSheetExporter {
 	}
 
 	nonisolated private func writeIndex(_ rows: [ContactSheetIndexRow], to url: URL) throws {
-		var lines = ["Index\tFileName\tSourceFile\tRow\tColumn\tError"]
+		var lines = ["Index\tSheet\tFileName\tSourceFile\tRow\tColumn\tError"]
 		lines += rows.map { row in
 			[
 				row.index,
+				escapedTSVValue(row.sheet),
 				escapedTSVValue(row.fileName),
 				escapedTSVValue(row.sourceFile),
 				String(row.row),
@@ -354,6 +410,7 @@ final class ContactSheetExporter {
 
 private struct ContactSheetIndexRow {
 	let index: String
+	let sheet: String
 	let fileName: String
 	let sourceFile: String
 	let row: Int
@@ -403,6 +460,8 @@ private enum ContactSheetExporterError: LocalizedError {
 	case couldNotCreateThumbnail(String)
 	case couldNotCreateJPEGDestination
 	case couldNotWriteJPEG(String)
+	case contactSheetTooLarge(Int)
+	case contactSheetPageTooLarge(String)
 
 	var errorDescription: String? {
 		switch self {
@@ -418,6 +477,10 @@ private enum ContactSheetExporterError: LocalizedError {
 			return "Could not create the contact sheet JPEG destination."
 		case .couldNotWriteJPEG(let path):
 			return "Could not write contact sheet JPEG at \(path)."
+		case .contactSheetTooLarge(let photoCount):
+			return "The contact sheet is too large for a single JPEG with \(photoCount) photos."
+		case .contactSheetPageTooLarge(let fileName):
+			return "The contact sheet page \(fileName) is too large for a JPEG."
 		}
 	}
 }

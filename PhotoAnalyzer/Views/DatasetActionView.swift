@@ -18,6 +18,7 @@ struct DatasetActionView: View {
 	let datasetState: DatasetUIState
 	let outputFolderURL: URL?
 	let isAnalyzing: Bool
+	let isCountingSupportedFiles: Bool
 	@Binding var includeSubfolders: Bool
 	let selectFolder: () -> Void
 	let selectOutputFolder: () -> Void
@@ -50,7 +51,7 @@ struct DatasetActionView: View {
 					VStack(alignment: .leading, spacing: 10) {
 						Toggle("Include subfolders", isOn: $includeSubfolders)
 							.toggleStyle(.checkbox)
-							.disabled(isAnalyzing)
+							.disabled(isAnalyzing || isCountingSupportedFiles)
 
 						Color.clear
 							.frame(height: 24)
@@ -61,7 +62,7 @@ struct DatasetActionView: View {
 						Button(action: selectFolder) {
 							Label("Select Source", systemImage: "folder.badge.plus")
 						}
-						.disabled(isAnalyzing)
+						.disabled(isAnalyzing || isCountingSupportedFiles)
 
 						Button(action: selectOutputFolder) {
 							Label("Select Output", systemImage: "tray.and.arrow.down")
@@ -138,7 +139,7 @@ struct DatasetActionView: View {
 				Label("Analyze & Generate AI Package", systemImage: "shippingbox")
 			}
 			.buttonStyle(.borderedProminent)
-			.disabled(datasetState.folderURL == nil || datasetState.supportedFileCount == 0)
+			.disabled(datasetState.folderURL == nil || datasetState.supportedFileCount == 0 || isCountingSupportedFiles)
 			.frame(maxWidth: .infinity)
 		}
 	}

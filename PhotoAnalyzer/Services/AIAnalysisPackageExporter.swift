@@ -104,20 +104,41 @@ final class AIAnalysisPackageExporter {
 	) -> [IndexedExportPhotoMetadata] {
 		var indexByPath: [String: String] = [:]
 		var indexByFileName: [String: String] = [:]
+		var contactSheetPageByPath: [String: Int] = [:]
+		var contactSheetPageByFileName: [String: Int] = [:]
+		var contactSheetFileByPath: [String: String] = [:]
+		var contactSheetFileByFileName: [String: String] = [:]
+		let columns = ContactSheetLayout.columnCount(for: sourceFileURLs.count)
+		let itemsPerSheet = max(1, columns * ContactSheetLayout.maximumRowsPerSheet)
+		let sheetCount = max(1, Int(ceil(Double(sourceFileURLs.count) / Double(itemsPerSheet))))
 
 		for (offset, url) in sourceFileURLs.enumerated() {
 			let index = ThumbnailIndexFormatter.string(from: offset + 1)
+			let page = offset / itemsPerSheet + 1
+			let sheetFile = sheetCount == 1
+				? AIAnalysisPackagePaths.contactSheetFileName
+				: ContactSheetLayout.pageFileName(page)
 			indexByPath[url.path] = index
 			indexByFileName[url.lastPathComponent] = index
+			contactSheetPageByPath[url.path] = page
+			contactSheetPageByFileName[url.lastPathComponent] = page
+			contactSheetFileByPath[url.path] = sheetFile
+			contactSheetFileByFileName[url.lastPathComponent] = sheetFile
 		}
 
 		return metadata.map { metadata in
 			let thumbnailIndex = metadata.sourceFile.flatMap { indexByPath[$0] }
 				?? metadata.fileName.flatMap { indexByFileName[$0] }
+			let contactSheetPage = metadata.sourceFile.flatMap { contactSheetPageByPath[$0] }
+				?? metadata.fileName.flatMap { contactSheetPageByFileName[$0] }
+			let contactSheetFile = metadata.sourceFile.flatMap { contactSheetFileByPath[$0] }
+				?? metadata.fileName.flatMap { contactSheetFileByFileName[$0] }
 
 			return IndexedExportPhotoMetadata(
 				metadata: metadata,
-				thumbnailIndex: thumbnailIndex
+				thumbnailIndex: thumbnailIndex,
+				contactSheetPage: contactSheetPage,
+				contactSheetFile: contactSheetFile
 			)
 		}
 	}

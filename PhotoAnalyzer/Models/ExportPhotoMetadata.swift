@@ -216,9 +216,13 @@ nonisolated struct ExportPhotoMetadata: Codable, Sendable {
 nonisolated struct IndexedExportPhotoMetadata: Encodable, Sendable {
     let metadata: ExportPhotoMetadata
     let thumbnailIndex: String?
+    let contactSheetPage: Int?
+    let contactSheetFile: String?
 
     enum CodingKeys: String, CodingKey {
         case thumbnailIndex = "ThumbnailIndex"
+        case contactSheetPage = "ContactSheetPage"
+        case contactSheetFile = "ContactSheetFile"
     }
 
     func encode(to encoder: Encoder) throws {
@@ -226,6 +230,8 @@ nonisolated struct IndexedExportPhotoMetadata: Encodable, Sendable {
 
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(thumbnailIndex, forKey: .thumbnailIndex)
+        try container.encodeIfPresent(contactSheetPage, forKey: .contactSheetPage)
+        try container.encodeIfPresent(contactSheetFile, forKey: .contactSheetFile)
     }
 }
 

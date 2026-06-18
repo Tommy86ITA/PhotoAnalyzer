@@ -51,8 +51,14 @@ struct ContentView: View {
     /// Whether a folder analysis is currently running.
     @State private var isAnalyzing = false
 
+    /// Whether the selected folder is currently being scanned for supported files.
+    @State private var isCountingSupportedFiles = false
+
     /// The currently running analysis task, if any.
     @State private var analysisTask: Task<Void, Never>?
+
+    /// The currently running supported file count task, if any.
+    @State private var supportedFileCountTask: Task<Void, Never>?
 
     /// The current operation phase shown at the bottom of the interface.
     @State private var analysisPhase: AnalysisPhase = .ready
@@ -66,6 +72,7 @@ struct ContentView: View {
                 datasetState: datasetState,
                 outputFolderURL: selectedOutputFolderURL,
                 isAnalyzing: isAnalyzing,
+                isCountingSupportedFiles: isCountingSupportedFiles,
                 includeSubfolders: $includeSubfolders,
                 selectFolder: selectFolder,
                 selectOutputFolder: selectOutputFolder,
@@ -99,7 +106,7 @@ struct ContentView: View {
 
             StatusFooterView(
                 statusMessage: analysisPhase.displayText,
-                isBusy: isAnalyzing
+                isBusy: isAnalyzing || isCountingSupportedFiles
             )
         }
         .padding(Layout.contentPadding)
@@ -118,7 +125,7 @@ struct ContentView: View {
 
     /// Opens a folder picker and stores the selected folder path.
     private func selectFolder() {
-        guard !isAnalyzing else {
+        guard !isAnalyzing, !isCountingSupportedFiles else {
             return
         }
 
@@ -137,14 +144,13 @@ struct ContentView: View {
         packageState = .initial
         contactSheetPreviewImage = nil
 
-        let supportedFileCount = supportedFileCount(in: url, includeSubfolders: includeSubfolders)
         datasetState = DatasetUIState(
             folderURL: url,
-            supportedFileCount: supportedFileCount,
+            supportedFileCount: nil,
             analyzedPhotoCount: nil,
             analysisStatus: .folderSelected
         )
-        analysisPhase = .ready
+        startSupportedFileCount(for: url, includeSubfolders: includeSubfolders)
     }
 
     /// Opens a folder picker and stores the optional AI package output folder.
@@ -172,7 +178,7 @@ struct ContentView: View {
 
     /// Starts analysis for the selected folder.
     private func analyzeSelectedFolder() {
-        guard !isAnalyzing else {
+        guard !isAnalyzing, !isCountingSupportedFiles else {
             return
         }
 
@@ -212,6 +218,9 @@ struct ContentView: View {
         )
 
         isAnalyzing = true
+        supportedFileCountTask?.cancel()
+        supportedFileCountTask = nil
+        isCountingSupportedFiles = false
         defer {
             isAnalyzing = false
             analysisTask = nil
@@ -342,12 +351,45 @@ struct ContentView: View {
         }
     }
 
+    /// Starts an asynchronous supported file count for the selected folder.
+    /// - Parameters:
+    ///   - folderURL: The selected folder URL.
+    ///   - includeSubfolders: Whether subfolders should be scanned recursively.
+    private func startSupportedFileCount(for folderURL: URL, includeSubfolders: Bool) {
+        supportedFileCountTask?.cancel()
+        isCountingSupportedFiles = true
+        analysisPhase = .scanningFiles
+
+        let task = Task {
+            let countTask = Task<Int, Never>.detached(priority: .utility) {
+                supportedFileCount(in: folderURL, includeSubfolders: includeSubfolders)
+            }
+            let fileCount = await withTaskCancellationHandler {
+                await countTask.value
+            } onCancel: {
+                countTask.cancel()
+            }
+
+            guard !Task.isCancelled else {
+                return
+            }
+
+            datasetState.supportedFileCount = fileCount
+            datasetState.analyzedPhotoCount = nil
+            datasetState.analysisStatus = .folderSelected
+            analysisPhase = fileCount > 0 ? .ready : .noSupportedFiles
+            isCountingSupportedFiles = false
+            supportedFileCountTask = nil
+        }
+        supportedFileCountTask = task
+    }
+
     /// Counts supported image files in the selected folder.
     /// - Parameters:
     ///   - folderURL: The selected folder URL.
     ///   - includeSubfolders: Whether subfolders should be scanned recursively.
     /// - Returns: Number of supported image files found inside the folder.
-    private func supportedFileCount(in folderURL: URL, includeSubfolders: Bool) -> Int {
+    private nonisolated func supportedFileCount(in folderURL: URL, includeSubfolders: Bool) -> Int {
         let accessGranted = folderURL.startAccessingSecurityScopedResource()
         defer {
             if accessGranted {
@@ -360,20 +402,20 @@ struct ContentView: View {
 
     /// Recounts supported files after scan options change.
     private func updateSupportedFileCountForSelectedFolder() {
-        guard !isAnalyzing, let selectedFolderURL else {
+        guard !isAnalyzing, !isCountingSupportedFiles, let selectedFolderURL else {
             return
         }
 
         statistics = nil
         packageState = .initial
         contactSheetPreviewImage = nil
-        datasetState.supportedFileCount = supportedFileCount(
-            in: selectedFolderURL,
-            includeSubfolders: includeSubfolders
-        )
+        datasetState.supportedFileCount = nil
         datasetState.analyzedPhotoCount = nil
         datasetState.analysisStatus = .folderSelected
-        analysisPhase = .ready
+        startSupportedFileCount(
+            for: selectedFolderURL,
+            includeSubfolders: includeSubfolders
+        )
     }
 
     /// Loads the generated contact sheet preview image.
