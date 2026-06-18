@@ -60,12 +60,14 @@ nonisolated struct AnalysisPipelineService: Sendable {
             completedUnitCount: completedPipelineUnitCount,
             totalUnitCount: pipelineTotalUnitCount,
             message: "Scanning files...",
+            phase: .scanningFiles,
             progressHandler: progressHandler
         )
         let scanningProgressUnitCount = Int64(max(1, expectedPhotoCount))
         let scanningProgressHandler = progressMapper(
             startingUnitCount: completedPipelineUnitCount,
             totalUnitCount: pipelineTotalUnitCount,
+            phase: .scanningFiles,
             progressHandler: progressHandler
         )
         let fileURLs = try await runCancellableDetached {
@@ -83,6 +85,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
             completedUnitCount: completedPipelineUnitCount,
             totalUnitCount: pipelineTotalUnitCount,
             message: "Scanning files...",
+            phase: .scanningFiles,
             progressHandler: progressHandler
         )
 
@@ -94,6 +97,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
         let metadataProgressHandler = progressMapper(
             startingUnitCount: completedPipelineUnitCount,
             totalUnitCount: pipelineTotalUnitCount,
+            phase: .readingMetadata,
             progressHandler: progressHandler
         )
         let folderAnalysisResult = try await runCancellableDetached {
@@ -108,6 +112,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
             completedUnitCount: completedPipelineUnitCount,
             totalUnitCount: pipelineTotalUnitCount,
             message: "Reading metadata...",
+            phase: .readingMetadata,
             progressHandler: progressHandler
         )
 
@@ -115,6 +120,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
             completedUnitCount: completedPipelineUnitCount,
             totalUnitCount: pipelineTotalUnitCount,
             message: "Generating statistics...",
+            phase: .generatingStatistics,
             progressHandler: progressHandler
         )
         let generatedStatistics = try await runCancellableDetached {
@@ -127,6 +133,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
             completedUnitCount: completedPipelineUnitCount,
             totalUnitCount: pipelineTotalUnitCount,
             message: "Generating statistics...",
+            phase: .generatingStatistics,
             progressHandler: progressHandler
         )
 
@@ -136,11 +143,13 @@ nonisolated struct AnalysisPipelineService: Sendable {
             completedUnitCount: completedPipelineUnitCount,
             totalUnitCount: pipelineTotalUnitCount,
             message: "Exporting AI package...",
+            phase: .exportingAIPackage,
             progressHandler: progressHandler
         )
         let dataExportProgressHandler = progressMapper(
             startingUnitCount: completedPipelineUnitCount,
             totalUnitCount: pipelineTotalUnitCount,
+            phase: .exportingAIPackage,
             progressHandler: progressHandler
         )
         let paths = try await runCancellableDetached {
@@ -159,12 +168,14 @@ nonisolated struct AnalysisPipelineService: Sendable {
             completedUnitCount: completedPipelineUnitCount,
             totalUnitCount: pipelineTotalUnitCount,
             message: "Generating contact sheet...",
+            phase: .generatingContactSheet,
             progressHandler: progressHandler
         )
         let contactSheetProgressUnitCount = Int64(contactSheetUnitCount(for: folderAnalysisResult.fileURLs.count))
         let contactSheetProgressHandler = progressMapper(
             startingUnitCount: completedPipelineUnitCount,
             totalUnitCount: pipelineTotalUnitCount,
+            phase: .generatingContactSheet,
             progressHandler: progressHandler
         )
         try await runCancellableDetached {
@@ -183,12 +194,14 @@ nonisolated struct AnalysisPipelineService: Sendable {
             completedUnitCount: completedPipelineUnitCount,
             totalUnitCount: pipelineTotalUnitCount,
             message: "Archiving package...",
+            phase: .archivingPackage,
             progressHandler: progressHandler
         )
         let archiveProgressHandler = progressMapper(
             startingUnitCount: completedPipelineUnitCount,
             totalUnitCount: pipelineTotalUnitCount,
             allocatedUnitCount: archiveProgressUnitCount,
+            phase: .archivingPackage,
             progressHandler: progressHandler
         )
         _ = try await runCancellableDetached {
@@ -199,7 +212,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
         }
         try Task.checkCancellation()
 
-        progressHandler?(AnalysisProgress(fractionCompleted: 1, message: "Package generated"))
+        progressHandler?(AnalysisProgress(fractionCompleted: 1, message: "Package generated", phase: .completed))
 
         return AnalysisPipelineResult(
             paths: paths,
@@ -213,12 +226,14 @@ nonisolated struct AnalysisPipelineService: Sendable {
         startingUnitCount: Int64,
         totalUnitCount: Int64,
         allocatedUnitCount: Int64? = nil,
+        phase: AnalysisPhase,
         progressHandler: ProgressHandler?
     ) -> @Sendable (ProgressSnapshot) -> Void {
         let mapper = PipelineProgressMapper(
             startingUnitCount: startingUnitCount,
             totalUnitCount: totalUnitCount,
-            allocatedUnitCount: allocatedUnitCount
+            allocatedUnitCount: allocatedUnitCount,
+            phase: phase
         )
 
         return { @Sendable snapshot in
@@ -230,9 +245,14 @@ nonisolated struct AnalysisPipelineService: Sendable {
         completedUnitCount: Int64,
         totalUnitCount: Int64,
         message: String,
+        phase: AnalysisPhase,
         progressHandler: ProgressHandler?
     ) {
-        let mapper = PipelineProgressMapper(startingUnitCount: 0, totalUnitCount: totalUnitCount)
+        let mapper = PipelineProgressMapper(
+            startingUnitCount: 0,
+            totalUnitCount: totalUnitCount,
+            phase: phase
+        )
         progressHandler?(mapper.map(completedUnitCount: completedUnitCount, message: message))
     }
 

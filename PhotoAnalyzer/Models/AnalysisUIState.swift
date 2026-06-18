@@ -38,7 +38,7 @@ enum AnalysisStatus {
 }
 
 /// Detailed operation phase shown in the status footer.
-enum AnalysisPhase {
+enum AnalysisPhase: Sendable {
     case ready
     case noFolderSelected
     case noSupportedFiles

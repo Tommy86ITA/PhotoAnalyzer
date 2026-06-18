@@ -5,7 +5,6 @@
 //  Created by Thomas Amaranto on 15/06/2026.
 //
 
-import AppKit
 import SwiftUI
 
 /// Main interface for the PhotoAnalyzer macOS application.
@@ -18,10 +17,6 @@ struct ContentView: View {
         static let windowWidth: CGFloat = 1200
         static let windowDefaultHeight: CGFloat = 800
         static let windowMinimumHeight: CGFloat = 820
-        static let contactSheetViewerWidth: CGFloat = 1000
-        static let contactSheetViewerHeight: CGFloat = 720
-        static let contactSheetViewerMinimumWidth: CGFloat = 760
-        static let contactSheetViewerMinimumHeight: CGFloat = 520
     }
 
     /// The security-scoped folder URL selected by the user.
@@ -45,8 +40,8 @@ struct ContentView: View {
     /// Contact sheet page browsing state for the latest package export.
     @State private var contactSheetPreview = ContactSheetPreviewState()
 
-    /// Dedicated macOS window for inspecting the generated contact sheet.
-    @State private var contactSheetViewerWindow: NSWindow?
+    /// Presenter that owns the dedicated contact sheet viewer window.
+    @State private var contactSheetViewerPresenter = ContactSheetViewerPresenter()
 
     /// Whether a folder analysis is currently running.
     @State private var isAnalyzing = false
@@ -155,13 +150,7 @@ struct ContentView: View {
             return
         }
 
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.canCreateDirectories = false
-
-        guard panel.runModal() == .OK, let url = panel.url else {
+        guard let url = FolderSelectionPanel.selectFolder() else {
             return
         }
 
@@ -186,14 +175,10 @@ struct ContentView: View {
             return
         }
 
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.canCreateDirectories = true
-        panel.prompt = "Select Output Folder"
-
-        guard panel.runModal() == .OK, let url = panel.url else {
+        guard let url = FolderSelectionPanel.selectFolder(
+            canCreateDirectories: true,
+            prompt: "Select Output Folder"
+        ) else {
             return
         }
 
@@ -292,7 +277,7 @@ struct ContentView: View {
             datasetState.analysisStatus = .completed
             packageState = AIPackageUIState(packageURL: result.paths.packageURL)
             analysisPhase = .completed
-            loadContactSheetPreview(from: result.paths.packageURL)
+            contactSheetPreview.load(from: result.paths.packageURL)
         } catch AnalysisPipelineError.noSupportedFiles {
             datasetState.supportedFileCount = 0
             datasetState.analysisStatus = .folderSelected
@@ -321,28 +306,9 @@ struct ContentView: View {
     /// Applies service progress to the dashboard state.
     private func applyPipelineProgress(_ progress: AnalysisProgress) {
         analysisProgress = progress
-        analysisPhase = phase(forProgressMessage: progress.message)
-    }
-
-    /// Maps service progress messages to the broader UI phase.
-    private func phase(forProgressMessage message: String) -> AnalysisPhase {
-        if message.hasPrefix("Scanning files") {
-            return .scanningFiles
-        } else if message.hasPrefix("Reading metadata") {
-            return .readingMetadata
-        } else if message.hasPrefix("Generating statistics") {
-            return .generatingStatistics
-        } else if message.hasPrefix("Exporting") {
-            return .exportingAIPackage
-        } else if message.hasPrefix("Writing contact sheet") || message.hasPrefix("Generating contact sheet") {
-            return .generatingContactSheet
-        } else if message.hasPrefix("Archiving") {
-            return .archivingPackage
-        } else if message == "Package generated" {
-            return .completed
+        if let phase = progress.phase {
+            analysisPhase = phase
         }
-
-        return analysisPhase
     }
 
     /// Starts an asynchronous supported file count for the selected folder.
@@ -356,7 +322,8 @@ struct ContentView: View {
 
         let task = Task {
             let countTask = Task<Int, Never>.detached(priority: .utility) {
-                supportedFileCount(in: folderURL, includeSubfolders: includeSubfolders)
+                SupportedFileCountService()
+                    .countSupportedFiles(in: folderURL, includeSubfolders: includeSubfolders)
             }
             let fileCount = await withTaskCancellationHandler {
                 await countTask.value
@@ -378,22 +345,6 @@ struct ContentView: View {
         supportedFileCountTask = task
     }
 
-    /// Counts supported image files in the selected folder.
-    /// - Parameters:
-    ///   - folderURL: The selected folder URL.
-    ///   - includeSubfolders: Whether subfolders should be scanned recursively.
-    /// - Returns: Number of supported image files found inside the folder.
-    private nonisolated func supportedFileCount(in folderURL: URL, includeSubfolders: Bool) -> Int {
-        let accessGranted = folderURL.startAccessingSecurityScopedResource()
-        defer {
-            if accessGranted {
-                folderURL.stopAccessingSecurityScopedResource()
-            }
-        }
-
-        return ImageFileScanner().imageFileURLs(in: folderURL, includeSubfolders: includeSubfolders).count
-    }
-
     /// Recounts supported files after scan options change.
     private func updateSupportedFileCountForSelectedFolder() {
         guard !isAnalyzing, !isCountingSupportedFiles, let selectedFolderURL else {
@@ -413,51 +364,16 @@ struct ContentView: View {
         )
     }
 
-    /// Loads the generated contact sheet preview image.
-    /// - Parameter packageURL: The package folder URL.
-    private func loadContactSheetPreview(from packageURL: URL) {
-        contactSheetPreview.load(from: packageURL)
-    }
-
     /// Opens the generated contact sheet in a dedicated viewer.
     private func openContactSheetViewer() {
         guard contactSheetPreview.canOpenViewer else {
             return
         }
 
-        if let contactSheetViewerWindow, contactSheetViewerWindow.isVisible {
-            contactSheetViewerWindow.makeKeyAndOrderFront(nil)
-            return
-        }
-
-        let window = NSWindow(
-            contentRect: NSRect(
-                x: 0,
-                y: 0,
-                width: Layout.contactSheetViewerWidth,
-                height: Layout.contactSheetViewerHeight
-            ),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered,
-            defer: false
+        contactSheetViewerPresenter.open(
+            pageURLs: contactSheetPreview.pageURLs,
+            initialPageIndex: contactSheetPreview.currentPageIndex
         )
-        window.title = "Contact Sheet"
-        window.minSize = NSSize(
-            width: Layout.contactSheetViewerMinimumWidth,
-            height: Layout.contactSheetViewerMinimumHeight
-        )
-        window.isReleasedWhenClosed = false
-        window.contentViewController = NSHostingController(
-            rootView: ContactSheetViewerView(
-                pageURLs: contactSheetPreview.pageURLs,
-                initialPageIndex: contactSheetPreview.currentPageIndex
-            ) { [weak window] in
-                window?.close()
-            }
-        )
-        window.center()
-        window.makeKeyAndOrderFront(nil)
-        contactSheetViewerWindow = window
     }
 
     /// Opens the generated package folder.
@@ -466,7 +382,7 @@ struct ContentView: View {
             return
         }
 
-        NSWorkspace.shared.open(packageURL)
+        PackageWorkspaceActions.openPackage(at: packageURL)
     }
 
     /// Reveals the generated package archive in Finder.
@@ -475,8 +391,7 @@ struct ContentView: View {
             return
         }
 
-        let archiveURL = AIAnalysisPackagePaths(packageURL: packageURL).archiveURL
-        NSWorkspace.shared.activateFileViewerSelecting([archiveURL])
+        PackageWorkspaceActions.revealArchive(forPackageAt: packageURL)
     }
 }
 

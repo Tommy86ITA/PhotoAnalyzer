@@ -26,10 +26,12 @@ nonisolated struct ProgressSnapshot: Sendable {
 nonisolated struct AnalysisProgress: Sendable {
     let fractionCompleted: Double
     let message: String
+    let phase: AnalysisPhase?
 
-    init(fractionCompleted: Double, message: String) {
+    init(fractionCompleted: Double, message: String, phase: AnalysisPhase? = nil) {
         self.fractionCompleted = min(1, max(0, fractionCompleted))
         self.message = message
+        self.phase = phase
     }
 }
 
@@ -38,11 +40,18 @@ nonisolated struct PipelineProgressMapper: Sendable {
     let startingUnitCount: Int64
     let totalUnitCount: Int64
     let allocatedUnitCount: Int64?
+    let phase: AnalysisPhase?
 
-    init(startingUnitCount: Int64, totalUnitCount: Int64, allocatedUnitCount: Int64? = nil) {
+    init(
+        startingUnitCount: Int64,
+        totalUnitCount: Int64,
+        allocatedUnitCount: Int64? = nil,
+        phase: AnalysisPhase? = nil
+    ) {
         self.startingUnitCount = startingUnitCount
         self.totalUnitCount = totalUnitCount
         self.allocatedUnitCount = allocatedUnitCount
+        self.phase = phase
     }
 
     func map(_ snapshot: ProgressSnapshot) -> AnalysisProgress {
@@ -55,14 +64,16 @@ nonisolated struct PipelineProgressMapper: Sendable {
 
         return AnalysisProgress(
             fractionCompleted: fraction(from: completedUnitCount),
-            message: snapshot.message
+            message: snapshot.message,
+            phase: phase
         )
     }
 
     func map(completedUnitCount: Int64, message: String) -> AnalysisProgress {
         AnalysisProgress(
             fractionCompleted: fraction(from: Double(completedUnitCount)),
-            message: message
+            message: message,
+            phase: phase
         )
     }
 
