@@ -12,7 +12,7 @@ struct AIPackageCardView: View {
     let packageState: AIPackageUIState
     let isAnalyzing: Bool
     let openPackage: () -> Void
-    let revealPackage: () -> Void
+    let revealArchive: () -> Void
 
     private var canOpenPackage: Bool {
         guard let packageURL = packageState.packageURL else {
@@ -40,6 +40,7 @@ struct AIPackageCardView: View {
                     PackageFileRow(fileName: AIAnalysisPackagePaths.statisticsFileName, exists: packageState.statisticsExists)
                     PackageFileRow(fileName: AIAnalysisPackagePaths.contactSheetFileName, exists: packageState.contactSheetExists)
                     PackageFileRow(fileName: AIAnalysisPackagePaths.indexFileName, exists: packageState.indexExists)
+                    PackageFileRow(fileName: archiveFileName, exists: packageState.archiveExists)
                 }
                 .padding(.top, 2)
 
@@ -58,10 +59,10 @@ struct AIPackageCardView: View {
                     }
                     .disabled(!canOpenPackage || isAnalyzing)
 
-                    Button(action: revealPackage) {
-                        Label("Reveal in Finder", systemImage: "magnifyingglass")
+                    Button(action: revealArchive) {
+                        Label("Reveal Archive", systemImage: "doc.zipper")
                     }
-                    .disabled(!canOpenPackage || isAnalyzing)
+                    .disabled(!packageState.archiveExists || isAnalyzing)
 
                     Spacer(minLength: 0)
                 }
@@ -81,6 +82,14 @@ struct AIPackageCardView: View {
         case .failed:
             return "exclamationmark.triangle"
         }
+    }
+
+    private var archiveFileName: String {
+        guard let packageURL = packageState.packageURL else {
+            return "package.zip"
+        }
+
+        return "\(packageURL.lastPathComponent).zip"
     }
 }
 

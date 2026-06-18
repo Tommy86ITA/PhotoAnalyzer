@@ -163,4 +163,18 @@ final class AIAnalysisPackageExporter {
 			)
 		}
 	}
+
+	/// Creates a ZIP archive for the generated package folder.
+	/// - Parameter paths: The package paths created by previous export phases.
+	/// - Returns: The created ZIP archive URL.
+	/// - Throws: File system or archive creation errors.
+	nonisolated func archivePackage(paths: AIAnalysisPackagePaths) throws -> URL {
+		try PerformanceLogger.measure("Archiving AI package") {
+			let archiver = AIAnalysisPackageArchiver()
+			return try archiver.archivePackage(
+				at: paths.packageURL,
+				to: paths.archiveURL
+			)
+		}
+	}
 }

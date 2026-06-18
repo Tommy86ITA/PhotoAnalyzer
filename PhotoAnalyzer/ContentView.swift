@@ -86,7 +86,7 @@ struct ContentView: View {
                         packageState: packageState,
                         isAnalyzing: isAnalyzing,
                         openPackage: openPackage,
-                        revealPackage: revealPackage
+                        revealArchive: revealArchive
                     )
 
                     DatasetOverviewView(statistics: statistics)
@@ -237,6 +237,7 @@ struct ContentView: View {
             statisticsExists: false,
             contactSheetExists: false,
             indexExists: false,
+            archiveExists: false,
             errorMessage: nil
         )
 
@@ -313,6 +314,12 @@ struct ContentView: View {
                     sourceFileURLs: folderAnalysisResult.fileURLs,
                     paths: paths
                 )
+            }
+            try Task.checkCancellation()
+
+            analysisPhase = .archivingPackage
+            _ = try await runCancellableDetached {
+                try exporter.archivePackage(paths: paths)
             }
             try Task.checkCancellation()
 
@@ -472,13 +479,14 @@ struct ContentView: View {
         NSWorkspace.shared.open(packageURL)
     }
 
-    /// Reveals the generated package folder in Finder.
-    private func revealPackage() {
+    /// Reveals the generated package archive in Finder.
+    private func revealArchive() {
         guard let packageURL = packageState.packageURL else {
             return
         }
 
-        NSWorkspace.shared.activateFileViewerSelecting([packageURL])
+        let archiveURL = AIAnalysisPackagePaths(packageURL: packageURL).archiveURL
+        NSWorkspace.shared.activateFileViewerSelecting([archiveURL])
     }
 }
 
