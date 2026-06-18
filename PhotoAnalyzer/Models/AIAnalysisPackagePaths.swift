@@ -52,6 +52,12 @@ nonisolated struct AIAnalysisPackagePaths {
         packageURL.appendingPathComponent(Self.indexFileName)
     }
 
+    var archiveURL: URL {
+        packageURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("\(packageURL.lastPathComponent).zip")
+    }
+
     private static let timestampFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")

@@ -47,6 +47,7 @@ enum AnalysisPhase {
     case generatingStatistics
     case exportingAIPackage
     case generatingContactSheet
+    case archivingPackage
     case cancelled
     case completed
     case exportFailed
@@ -70,6 +71,8 @@ enum AnalysisPhase {
             return "Exporting AI package..."
         case .generatingContactSheet:
             return "Generating contact sheet..."
+        case .archivingPackage:
+            return "Archiving package..."
         case .cancelled:
             return "Cancelled"
         case .completed:
@@ -138,6 +141,7 @@ struct AIPackageUIState {
     var statisticsExists: Bool
     var contactSheetExists: Bool
     var indexExists: Bool
+    var archiveExists: Bool
     var errorMessage: String?
 
     static let initial = AIPackageUIState(
@@ -147,6 +151,7 @@ struct AIPackageUIState {
         statisticsExists: false,
         contactSheetExists: false,
         indexExists: false,
+        archiveExists: false,
         errorMessage: nil
     )
 
@@ -157,6 +162,7 @@ struct AIPackageUIState {
         statisticsExists: Bool,
         contactSheetExists: Bool,
         indexExists: Bool,
+        archiveExists: Bool,
         errorMessage: String?
     ) {
         self.status = status
@@ -165,6 +171,7 @@ struct AIPackageUIState {
         self.statisticsExists = statisticsExists
         self.contactSheetExists = contactSheetExists
         self.indexExists = indexExists
+        self.archiveExists = archiveExists
         self.errorMessage = errorMessage
     }
 
@@ -177,6 +184,7 @@ struct AIPackageUIState {
             statisticsExists: FileManager.default.fileExists(atPath: paths.statisticsURL.path),
             contactSheetExists: FileManager.default.fileExists(atPath: paths.contactSheetURL.path),
             indexExists: FileManager.default.fileExists(atPath: paths.indexURL.path),
+            archiveExists: FileManager.default.fileExists(atPath: paths.archiveURL.path),
             errorMessage: errorMessage
         )
     }
