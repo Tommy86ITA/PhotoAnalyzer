@@ -110,16 +110,21 @@ struct DatasetActionView: View {
 				.lineLimit(1)
 				.truncationMode(.middle)
 				.textSelection(.enabled)
+				.help(path ?? text)
 
 			CopyPathButton(path: path)
 		}
+		.help(path ?? text)
 	}
 
 	private var metricsRow: some View {
 		HStack(alignment: .center, spacing: 14) {
 			Label("Supported: \(datasetState.supportedFilesText)", systemImage: "photo.stack")
+				.help("Supported image files found in the selected dataset.")
 			Label("Analyzed: \(datasetState.analyzedPhotosText)", systemImage: "checkmark.circle")
+				.help("Photos successfully processed during the current analysis.")
 			Label(datasetState.analysisStatus.displayText, systemImage: "waveform.path.ecg")
+				.help("Current dataset analysis status.")
 		}
 		.font(.footnote)
 		.foregroundStyle(.secondary)

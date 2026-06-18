@@ -63,53 +63,63 @@ struct ContentView: View {
     /// The current operation phase shown at the bottom of the interface.
     @State private var analysisPhase: AnalysisPhase = .ready
 
+    /// The current progress for the complete analysis pipeline.
+    @State private var analysisProgress: AnalysisProgress?
+
     /// The view hierarchy for the PhotoAnalyzer interface.
     var body: some View {
-        VStack(alignment: .leading, spacing: Layout.contentSpacing) {
-            AppHeaderView()
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: Layout.contentSpacing) {
+                AppHeaderView()
 
-            DatasetActionView(
-                datasetState: datasetState,
-                outputFolderURL: selectedOutputFolderURL,
-                isAnalyzing: isAnalyzing,
-                isCountingSupportedFiles: isCountingSupportedFiles,
-                includeSubfolders: $includeSubfolders,
-                selectFolder: selectFolder,
-                selectOutputFolder: selectOutputFolder,
-                analyze: analyzeSelectedFolder,
-                cancelAnalysis: cancelAnalysis
-            )
-
-            HStack(alignment: .top, spacing: Layout.dashboardSpacing) {
-                VStack(spacing: Layout.mainColumnSpacing) {
-                    AIPackageCardView(
-                        packageState: packageState,
-                        isAnalyzing: isAnalyzing,
-                        openPackage: openPackage,
-                        revealArchive: revealArchive
-                    )
-
-                    DatasetOverviewView(statistics: statistics)
-                }
-                .frame(maxWidth: .infinity, alignment: .top)
-
-                ContactSheetPreviewView(
-                    image: contactSheetPreviewImage,
-                    packageStatus: packageState.status,
-                    openViewer: openContactSheetViewer
+                DatasetActionView(
+                    datasetState: datasetState,
+                    outputFolderURL: selectedOutputFolderURL,
+                    isAnalyzing: isAnalyzing,
+                    isCountingSupportedFiles: isCountingSupportedFiles,
+                    includeSubfolders: $includeSubfolders,
+                    selectFolder: selectFolder,
+                    selectOutputFolder: selectOutputFolder,
+                    analyze: analyzeSelectedFolder,
+                    cancelAnalysis: cancelAnalysis
                 )
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+                StatusFooterView(
+                    statusMessage: analysisPhase.displayText,
+                    isBusy: isAnalyzing || isCountingSupportedFiles,
+                    progress: footerProgress
+                )
+
+                GeometryReader { proxy in
+                    HStack(alignment: .top, spacing: Layout.dashboardSpacing) {
+                        VStack(spacing: Layout.mainColumnSpacing) {
+                            AIPackageCardView(
+                                packageState: packageState,
+                                isAnalyzing: isAnalyzing,
+                                openPackage: openPackage,
+                                revealArchive: revealArchive
+                            )
+
+                            DatasetOverviewView(statistics: statistics)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: proxy.size.height, alignment: .top)
+
+                        ContactSheetPreviewView(
+                            image: contactSheetPreviewImage,
+                            packageStatus: packageState.status,
+                            openViewer: openContactSheetViewer
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: proxy.size.height, alignment: .top)
+                    }
+                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+                }
+                .frame(maxHeight: .infinity, alignment: .top)
+
+                Spacer(minLength: 0)
             }
-            .frame(maxHeight: .infinity, alignment: .top)
-
-            Spacer(minLength: 0)
-
-            StatusFooterView(
-                statusMessage: analysisPhase.displayText,
-                isBusy: isAnalyzing || isCountingSupportedFiles
-            )
+            .padding(Layout.contentPadding)
+            .frame(maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(Layout.contentPadding)
         .frame(minWidth: Layout.windowWidth, minHeight: Layout.windowMinimumHeight, alignment: .topLeading)
         .background(
             WindowPlacementView(
@@ -121,6 +131,18 @@ struct ContentView: View {
         .onChange(of: includeSubfolders) { _, _ in
             updateSupportedFileCountForSelectedFolder()
         }
+    }
+
+    private var footerProgress: AnalysisProgress? {
+        if let analysisProgress {
+            return analysisProgress
+        }
+
+        guard isAnalyzing || isCountingSupportedFiles else {
+            return nil
+        }
+
+        return AnalysisProgress(fractionCompleted: 0, message: analysisPhase.displayText)
     }
 
     /// Opens a folder picker and stores the selected folder path.
@@ -143,6 +165,7 @@ struct ContentView: View {
         statistics = nil
         packageState = .initial
         contactSheetPreviewImage = nil
+        analysisProgress = nil
 
         datasetState = DatasetUIState(
             folderURL: url,
@@ -173,6 +196,7 @@ struct ContentView: View {
         selectedOutputFolderURL = url
         packageState = .initial
         contactSheetPreviewImage = nil
+        analysisProgress = nil
         analysisPhase = .ready
     }
 
@@ -212,6 +236,9 @@ struct ContentView: View {
 
         let outputFolderURL = selectedOutputFolderURL
         let shouldIncludeSubfolders = includeSubfolders
+        let expectedSupportedFileCount = datasetState.supportedFileCount
+        let expectedPhotoCount = expectedSupportedFileCount ?? 0
+        let pipelineTotalUnitCount = totalPipelineUnitCount(for: expectedPhotoCount)
         let packagePaths = AIAnalysisPackagePaths(
             datasetFolderURL: folderURL,
             outputFolderURL: outputFolderURL
@@ -228,6 +255,7 @@ struct ContentView: View {
 
         statistics = nil
         contactSheetPreviewImage = nil
+        analysisProgress = AnalysisProgress(fractionCompleted: 0, message: "Starting analysis...")
         datasetState.analysisStatus = .analyzing
         datasetState.analyzedPhotoCount = nil
         packageState = AIPackageUIState(
@@ -258,38 +286,84 @@ struct ContentView: View {
         }
 
         do {
+            var completedPipelineUnitCount: Int64 = 0
+
             analysisPhase = .scanningFiles
+            setAnalysisProgress(
+                completedUnitCount: completedPipelineUnitCount,
+                totalUnitCount: pipelineTotalUnitCount,
+                message: "Scanning files..."
+            )
+            let scanningProgressUnitCount = Int64(max(1, expectedPhotoCount))
+            let scanningProgressHandler = progressHandler(
+                startingUnitCount: completedPipelineUnitCount,
+                totalUnitCount: pipelineTotalUnitCount
+            )
             let fileURLs = try await runCancellableDetached {
                 try Task.checkCancellation()
                 return ImageFileScanner().imageFileURLs(
                     in: folderURL,
-                    includeSubfolders: shouldIncludeSubfolders
+                    includeSubfolders: shouldIncludeSubfolders,
+                    expectedSupportedFileCount: expectedSupportedFileCount,
+                    progressHandler: scanningProgressHandler
                 )
             }
             try Task.checkCancellation()
+            completedPipelineUnitCount += scanningProgressUnitCount
+            setAnalysisProgress(
+                completedUnitCount: completedPipelineUnitCount,
+                totalUnitCount: pipelineTotalUnitCount,
+                message: "Scanning files..."
+            )
 
             guard !fileURLs.isEmpty else {
                 datasetState.supportedFileCount = 0
                 datasetState.analysisStatus = .folderSelected
                 packageState = .initial
                 analysisPhase = .noSupportedFiles
+                analysisProgress = nil
                 return
             }
 
             datasetState.supportedFileCount = fileURLs.count
 
             analysisPhase = .readingMetadata
+            let metadataProgressUnitCount = Int64(max(1, fileURLs.count))
+            let metadataProgressHandler = progressHandler(
+                startingUnitCount: completedPipelineUnitCount,
+                totalUnitCount: pipelineTotalUnitCount
+            )
             let folderAnalysisResult = try await runCancellableDetached {
-                try await FolderAnalysisService().analyzeFilesWithExportMetadata(fileURLs)
+                try await FolderAnalysisService().analyzeFilesWithExportMetadata(
+                    fileURLs,
+                    progressHandler: metadataProgressHandler
+                )
             }
             try Task.checkCancellation()
+            completedPipelineUnitCount += metadataProgressUnitCount
+            setAnalysisProgress(
+                completedUnitCount: completedPipelineUnitCount,
+                totalUnitCount: pipelineTotalUnitCount,
+                message: "Reading metadata..."
+            )
 
             analysisPhase = .generatingStatistics
+            setAnalysisProgress(
+                completedUnitCount: completedPipelineUnitCount,
+                totalUnitCount: pipelineTotalUnitCount,
+                message: "Generating statistics..."
+            )
             let generatedStatistics = try await runCancellableDetached {
                 try Task.checkCancellation()
                 return PhotoStatisticsService().buildStatistics(from: folderAnalysisResult.photos)
             }
             try Task.checkCancellation()
+            completedPipelineUnitCount += 1
+            setAnalysisProgress(
+                completedUnitCount: completedPipelineUnitCount,
+                totalUnitCount: pipelineTotalUnitCount,
+                message: "Generating statistics..."
+            )
 
             statistics = generatedStatistics
             datasetState.analyzedPhotoCount = folderAnalysisResult.photos.count
@@ -297,31 +371,70 @@ struct ContentView: View {
             let exporter = AIAnalysisPackageExporter()
 
             analysisPhase = .exportingAIPackage
+            setAnalysisProgress(
+                completedUnitCount: completedPipelineUnitCount,
+                totalUnitCount: pipelineTotalUnitCount,
+                message: "Exporting AI package..."
+            )
+            let dataExportProgressHandler = progressHandler(
+                startingUnitCount: completedPipelineUnitCount,
+                totalUnitCount: pipelineTotalUnitCount
+            )
             let paths = try await runCancellableDetached {
                 try exporter.exportDataFiles(
                     for: folderURL,
                     metadata: folderAnalysisResult.exportMetadata,
                     sourceFileURLs: folderAnalysisResult.fileURLs,
                     statistics: generatedStatistics,
-                    paths: packagePaths
+                    paths: packagePaths,
+                    progressHandler: dataExportProgressHandler
                 )
             }
+            completedPipelineUnitCount += 2
 
             analysisPhase = .generatingContactSheet
+            setAnalysisProgress(
+                completedUnitCount: completedPipelineUnitCount,
+                totalUnitCount: pipelineTotalUnitCount,
+                message: "Generating contact sheet..."
+            )
+            let contactSheetProgressUnitCount = Int64(contactSheetUnitCount(for: folderAnalysisResult.fileURLs.count))
+            let contactSheetProgressHandler = progressHandler(
+                startingUnitCount: completedPipelineUnitCount,
+                totalUnitCount: pipelineTotalUnitCount
+            )
             try await runCancellableDetached {
                 try await exporter.exportContactSheet(
                     folderURL: folderURL,
                     sourceFileURLs: folderAnalysisResult.fileURLs,
-                    paths: paths
+                    paths: paths,
+                    progressHandler: contactSheetProgressHandler
                 )
             }
             try Task.checkCancellation()
+            completedPipelineUnitCount += contactSheetProgressUnitCount
 
             analysisPhase = .archivingPackage
+            let archiveProgressUnitCount = Int64(zipArchiveUnitCount(for: folderAnalysisResult.fileURLs.count))
+            setAnalysisProgress(
+                completedUnitCount: completedPipelineUnitCount,
+                totalUnitCount: pipelineTotalUnitCount,
+                message: "Archiving package..."
+            )
+            let archiveProgressHandler = progressHandler(
+                startingUnitCount: completedPipelineUnitCount,
+                totalUnitCount: pipelineTotalUnitCount,
+                allocatedUnitCount: archiveProgressUnitCount
+            )
             _ = try await runCancellableDetached {
-                try exporter.archivePackage(paths: paths)
+                try exporter.archivePackage(
+                    paths: paths,
+                    progressHandler: archiveProgressHandler
+                )
             }
             try Task.checkCancellation()
+            completedPipelineUnitCount += archiveProgressUnitCount
+            analysisProgress = AnalysisProgress(fractionCompleted: 1, message: "Package generated")
 
             datasetState.analysisStatus = .completed
             packageState = AIPackageUIState(packageURL: paths.packageURL)
@@ -335,13 +448,80 @@ struct ContentView: View {
             datasetState.analyzedPhotoCount = nil
             packageState = .initial
             analysisPhase = .cancelled
+            analysisProgress = nil
         } catch {
             let errorDescription = "\(error.localizedDescription) (\(String(reflecting: error)))"
             print("AI package export failed: \(errorDescription)")
             datasetState.analysisStatus = statistics == nil ? .failed : .completedWithExportError
             packageState = AIPackageUIState(packageURL: packagePaths.packageURL, errorMessage: errorDescription)
             analysisPhase = statistics == nil ? .failed : .exportFailed
+            analysisProgress = nil
         }
+    }
+
+    /// Builds a progress callback that maps service progress into the full pipeline unit count.
+    private func progressHandler(
+        startingUnitCount: Int64,
+        totalUnitCount: Int64,
+        allocatedUnitCount: Int64? = nil
+    ) -> @Sendable (ProgressSnapshot) -> Void {
+        let mapper = PipelineProgressMapper(
+            startingUnitCount: startingUnitCount,
+            totalUnitCount: totalUnitCount,
+            allocatedUnitCount: allocatedUnitCount
+        )
+
+        return { @Sendable snapshot in
+            let progress = mapper.map(snapshot)
+
+            Task { @MainActor in
+                analysisProgress = progress
+            }
+        }
+    }
+
+    /// Updates pipeline progress from the current global unit count.
+    private func setAnalysisProgress(
+        completedUnitCount: Int64,
+        totalUnitCount: Int64,
+        message: String
+    ) {
+        let mapper = PipelineProgressMapper(startingUnitCount: 0, totalUnitCount: totalUnitCount)
+        analysisProgress = mapper.map(completedUnitCount: completedUnitCount, message: message)
+    }
+
+    /// Calculates the total number of concrete work units in the analysis pipeline.
+    private nonisolated func totalPipelineUnitCount(for photoCount: Int) -> Int64 {
+        let safePhotoCount = max(1, photoCount)
+        return Int64(
+            safePhotoCount + // scan discovered supported files
+            safePhotoCount + // metadata records read
+            1 + // statistics
+            2 + // metadata.json and statistics.json
+            contactSheetUnitCount(for: safePhotoCount) +
+            zipArchiveUnitCount(for: safePhotoCount)
+        )
+    }
+
+    /// Calculates the concrete work units needed to export contact sheet artifacts.
+    private nonisolated func contactSheetUnitCount(for photoCount: Int) -> Int {
+        let safePhotoCount = max(1, photoCount)
+        let columns = ContactSheetLayout.columnCount(for: safePhotoCount)
+        let itemsPerSheet = max(1, columns * ContactSheetLayout.maximumRowsPerSheet)
+        let sheetCount = max(1, Int(ceil(Double(safePhotoCount) / Double(itemsPerSheet))))
+
+        return safePhotoCount + sheetCount + 1
+    }
+
+    /// Calculates the estimated artifact units that ZIPFoundation will archive.
+    private nonisolated func zipArchiveUnitCount(for photoCount: Int) -> Int {
+        let safePhotoCount = max(1, photoCount)
+        let columns = ContactSheetLayout.columnCount(for: safePhotoCount)
+        let itemsPerSheet = max(1, columns * ContactSheetLayout.maximumRowsPerSheet)
+        let sheetCount = max(1, Int(ceil(Double(safePhotoCount) / Double(itemsPerSheet))))
+        let contactSheetAliasCount = sheetCount > 1 ? 1 : 0
+
+        return 3 + sheetCount + contactSheetAliasCount
     }
 
     /// Runs work off the main actor while propagating cancellation to the detached task.
@@ -416,6 +596,7 @@ struct ContentView: View {
         statistics = nil
         packageState = .initial
         contactSheetPreviewImage = nil
+        analysisProgress = nil
         datasetState.supportedFileCount = nil
         datasetState.analyzedPhotoCount = nil
         datasetState.analysisStatus = .folderSelected

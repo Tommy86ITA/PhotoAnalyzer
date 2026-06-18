@@ -28,7 +28,8 @@ struct AIPackageCardView: View {
                 DashboardMetricRow(
                     title: "Status",
                     value: packageState.status.displayText,
-                    systemImage: statusIcon
+                    systemImage: statusIcon,
+                    helpText: "Current generation status for the AI analysis package."
                 )
                 PackagePathRow(
                     packageURL: packageState.packageURL,
@@ -114,9 +115,11 @@ private struct PackagePathRow: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
+                .help(packageURL?.path ?? packagePathText)
 
             CopyPathButton(path: packageURL?.path)
         }
+        .help(packageURL?.path ?? packagePathText)
     }
 }
 
@@ -139,5 +142,6 @@ private struct PackageFileRow: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
+        .help(exists ? "\(fileName) was generated successfully." : "\(fileName) has not been generated yet.")
     }
 }

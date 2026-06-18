@@ -31,15 +31,43 @@ final class ContactSheetExporter {
 		fileURLs: [URL],
 		paths: AIAnalysisPackagePaths
 	) async throws {
-		try Task.checkCancellation()
-		let thumbnailResults = try await PerformanceLogger.measure("Loading thumbnails") {
-			try await loadThumbnailResults(for: fileURLs)
-		}
-		try Task.checkCancellation()
+		try await exportContactSheet(
+			folderURL: folderURL,
+			fileURLs: fileURLs,
+			paths: paths,
+			progressHandler: nil
+		)
+	}
 
+	/// Exports `contact_sheet.jpg` and `index.tsv` into the package folder.
+	/// - Parameters:
+	///   - folderURL: The original folder URL analyzed by PhotoAnalyzer.
+	///   - fileURLs: The analyzed image files in stable visual order.
+	///   - paths: The output AI package paths.
+	///   - progressHandler: Optional progress callback for contact sheet export work.
+	/// - Throws: File system or image encoding errors.
+	nonisolated func exportContactSheet(
+		folderURL: URL,
+		fileURLs: [URL],
+		paths: AIAnalysisPackagePaths,
+		progressHandler: (@Sendable (ProgressSnapshot) -> Void)?
+	) async throws {
+		try Task.checkCancellation()
 		let columns = try columnCount(for: fileURLs.count)
 		let rowsPerSheet = ContactSheetLayout.maximumRowsPerSheet
 		let itemsPerSheet = max(1, columns * rowsPerSheet)
+		let estimatedSheetCount = max(1, Int(ceil(Double(fileURLs.count) / Double(itemsPerSheet))))
+		let totalProgressUnits = Int64(fileURLs.count + estimatedSheetCount + 1)
+
+		let thumbnailResults = try await PerformanceLogger.measure("Loading thumbnails") {
+			try await loadThumbnailResults(
+				for: fileURLs,
+				totalProgressUnits: totalProgressUnits,
+				progressHandler: progressHandler
+			)
+		}
+		try Task.checkCancellation()
+
 		let sheetCount = max(1, Int(ceil(Double(thumbnailResults.count) / Double(itemsPerSheet))))
 		var indexRows: [ContactSheetIndexRow] = []
 		var exportSummary = ContactSheetExportSummary()
@@ -66,6 +94,13 @@ final class ContactSheetExporter {
 				exportSummary: &exportSummary
 			)
 			indexRows.append(contentsOf: pageRows)
+			progressHandler?(
+				ProgressSnapshot(
+					completedUnitCount: Int64(fileURLs.count + sheetIndex + 1),
+					totalUnitCount: totalProgressUnits,
+					message: "Writing contact sheet \(sheetIndex + 1) of \(sheetCount)..."
+				)
+			)
 
 			if sheetIndex == 0 && sheetCount > 1 {
 				try? FileManager.default.removeItem(at: paths.contactSheetURL)
@@ -77,6 +112,13 @@ final class ContactSheetExporter {
 		try PerformanceLogger.measure("Writing index.tsv") {
 			try writeIndex(indexRows, to: paths.indexURL)
 		}
+		progressHandler?(
+			ProgressSnapshot(
+				completedUnitCount: totalProgressUnits,
+				totalUnitCount: totalProgressUnits,
+				message: "Writing index.tsv..."
+			)
+		)
 
 		print("Contact sheet pages: \(sheetCount)")
 		print(exportSummary.logMessage)
@@ -207,7 +249,11 @@ final class ContactSheetExporter {
 		}
 	}
 
-	nonisolated private func loadThumbnailResults(for fileURLs: [URL]) async throws -> [IndexedThumbnailResult] {
+	nonisolated private func loadThumbnailResults(
+		for fileURLs: [URL],
+		totalProgressUnits: Int64,
+		progressHandler: (@Sendable (ProgressSnapshot) -> Void)?
+	) async throws -> [IndexedThumbnailResult] {
 		let maxPixelSize = max(ContactSheetLayout.thumbnailSize.width, ContactSheetLayout.thumbnailSize.height) * 2
 		var results: [IndexedThumbnailResult] = []
 		results.reserveCapacity(fileURLs.count)
@@ -240,6 +286,13 @@ final class ContactSheetExporter {
 
 				for try await result in group {
 					results.append(result)
+					progressHandler?(
+						ProgressSnapshot(
+							completedUnitCount: Int64(results.count),
+							totalUnitCount: totalProgressUnits,
+							message: "Loading thumbnails..."
+						)
+					)
 				}
 			}
 
