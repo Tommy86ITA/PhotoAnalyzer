@@ -8,7 +8,7 @@
 import Foundation
 
 /// Owns a temporary directory used to materialize non-file sources as physical files.
-final class TemporaryAssetWorkspace {
+final class TemporaryAssetWorkspace: @unchecked Sendable {
     let directoryURL: URL
 
     private var reservedFileNames: Set<String> = []

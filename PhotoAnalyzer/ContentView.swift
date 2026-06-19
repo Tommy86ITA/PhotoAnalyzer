@@ -35,6 +35,9 @@ struct ContentView: View {
     /// Whether selected dataset subfolders should be scanned.
     @State private var includeSubfolders = false
 
+    /// Whether Photos Library analysis may download missing originals from iCloud.
+    @State private var allowPhotosNetworkAccess = false
+
     /// User-facing state for the selected dataset.
     @State private var datasetState = DatasetUIState.initial
 
@@ -82,10 +85,12 @@ struct ContentView: View {
                     sourcePath: sourcePath,
                     isSourcePlaceholder: selectedAnalysisSource == nil,
                     isFolderSource: isFolderSource,
+                    isPhotosSource: isPhotosSource,
                     canAnalyze: canAnalyzeSelectedSource,
                     isAnalyzing: isAnalyzing,
                     isCountingSupportedFiles: isCountingSupportedFiles,
                     includeSubfolders: $includeSubfolders,
+                    allowPhotosNetworkAccess: $allowPhotosNetworkAccess,
                     selectedPhotoItems: $selectedPhotoItems,
                     selectFolder: selectFolder,
                     selectOutputFolder: selectOutputFolder,
@@ -147,6 +152,9 @@ struct ContentView: View {
         .onChange(of: selectedPhotoItems) { _, newItems in
             selectPhotos(from: newItems)
         }
+        .onChange(of: allowPhotosNetworkAccess) { _, _ in
+            updateSelectedPhotosNetworkAccess()
+        }
     }
 
     private var sourceIconName: String {
@@ -173,6 +181,13 @@ struct ContentView: View {
 
     private var isFolderSource: Bool {
         if case .folder = selectedAnalysisSource {
+            return true
+        }
+        return false
+    }
+
+    private var isPhotosSource: Bool {
+        if case .photosLibrary = selectedAnalysisSource {
             return true
         }
         return false
@@ -213,6 +228,7 @@ struct ContentView: View {
             includeSubfolders: includeSubfolders
         ))
         selectedPhotoItems = []
+        allowPhotosNetworkAccess = false
         statistics = nil
         packageState = .initial
         contactSheetPreview.reset()
@@ -258,7 +274,7 @@ struct ContentView: View {
         selectedAnalysisSource = .photosLibrary(PhotosSelection(
             mode: .assets(localIdentifiers: localIdentifiers),
             representation: .original,
-            allowsNetworkAccess: false
+            allowsNetworkAccess: allowPhotosNetworkAccess
         ))
         datasetState = DatasetUIState(
             folderURL: nil,
@@ -266,6 +282,26 @@ struct ContentView: View {
             analyzedPhotoCount: nil,
             analysisStatus: .sourceSelected
         )
+        analysisPhase = .ready
+    }
+
+    /// Updates the selected Photos source when iCloud download policy changes.
+    private func updateSelectedPhotosNetworkAccess() {
+        guard case .photosLibrary(let selection) = selectedAnalysisSource else {
+            return
+        }
+
+        selectedAnalysisSource = .photosLibrary(PhotosSelection(
+            mode: selection.mode,
+            representation: selection.representation,
+            allowsNetworkAccess: allowPhotosNetworkAccess
+        ))
+        packageState = .initial
+        contactSheetPreview.reset()
+        statistics = nil
+        analysisProgress = nil
+        datasetState.analyzedPhotoCount = nil
+        datasetState.analysisStatus = .sourceSelected
         analysisPhase = .ready
     }
 
@@ -317,8 +353,9 @@ struct ContentView: View {
                 return
             }
 
+            let photoItems = selectedPhotoItems
             let task = Task {
-                await analyzeSelectedPhotos(selection)
+                await analyzeSelectedPhotos(selection, items: photoItems)
             }
             analysisTask = task
         }
@@ -430,7 +467,7 @@ struct ContentView: View {
     }
 
     /// Materializes selected Photos Library assets and runs the file-based pipeline.
-    private func analyzeSelectedPhotos(_ selection: PhotosSelection) async {
+    private func analyzeSelectedPhotos(_ selection: PhotosSelection, items: [PhotosPickerItem]) async {
         guard !isAnalyzing else {
             return
         }
@@ -475,7 +512,7 @@ struct ContentView: View {
         var materializationResult: PhotosMaterializationResult?
 
         do {
-            let result = try await PhotosLibraryAssetExporter().export(selection: selection)
+            let result = try await materializePhotosSelection(selection, items: items)
             materializationResult = result
             defer {
                 result.workspace.cleanup()
@@ -531,6 +568,26 @@ struct ContentView: View {
             packageState = AIPackageUIState(packageURL: packagePaths.packageURL, error: appError)
             analysisPhase = statistics == nil ? .failed : .exportFailed
             analysisProgress = nil
+        }
+    }
+
+    /// Runs Photos picker materialization away from the main actor.
+    private func materializePhotosSelection(
+        _ selection: PhotosSelection,
+        items: [PhotosPickerItem]
+    ) async throws -> PhotosMaterializationResult {
+        let task = Task.detached(priority: .utility) {
+            if items.isEmpty {
+                try await PhotosLibraryAssetExporter().export(selection: selection)
+            } else {
+                try await PhotosPickerItemAssetExporter().export(items: items)
+            }
+        }
+
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
         }
     }
 

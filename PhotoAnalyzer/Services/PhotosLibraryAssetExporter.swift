@@ -12,7 +12,7 @@ import Foundation
 #endif
 
 /// A Photos asset materialized into the temporary file workspace.
-nonisolated struct MaterializedPhotosAsset {
+nonisolated struct MaterializedPhotosAsset: Sendable {
     let assetLocalIdentifier: String
     let originalFilename: String?
     let fileURL: URL
@@ -34,7 +34,7 @@ nonisolated struct MaterializedPhotosAsset {
 }
 
 /// Result of exporting a Photos selection to physical files.
-nonisolated struct PhotosMaterializationResult {
+nonisolated struct PhotosMaterializationResult: Sendable {
     let assets: [MaterializedPhotosAsset]
     let skippedAssets: [PhotosAssetExportFailure]
     let workspace: TemporaryAssetWorkspace
@@ -186,7 +186,14 @@ private extension PhotosLibraryAssetExporter {
     }
 
     func fetchAssets(with localIdentifiers: [String]) -> [String: PHAsset] {
-        let result = PHAsset.fetchAssets(withLocalIdentifiers: localIdentifiers, options: nil)
+        let options = PHFetchOptions()
+        options.includeHiddenAssets = false
+        options.includeAssetSourceTypes = [.typeUserLibrary, .typeCloudShared]
+        options.predicate = NSPredicate(
+            format: "mediaType == %d",
+            PHAssetMediaType.image.rawValue
+        )
+        let result = PHAsset.fetchAssets(withLocalIdentifiers: localIdentifiers, options: options)
         var assetsByIdentifier: [String: PHAsset] = [:]
         assetsByIdentifier.reserveCapacity(result.count)
 

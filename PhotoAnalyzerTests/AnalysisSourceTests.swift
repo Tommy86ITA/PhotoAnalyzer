@@ -27,6 +27,16 @@ struct AnalysisSourceTests {
         #expect(selection.displayName == "2 Photos assets")
     }
 
+    @Test func photosSelectionCanAllowNetworkAccessForICloudOriginals() {
+        let selection = PhotosSelection(
+            mode: .assets(localIdentifiers: ["asset-1"]),
+            allowsNetworkAccess: true
+        )
+
+        #expect(selection.allowsNetworkAccess)
+        #expect(selection.displayName == "1 Photos asset")
+    }
+
     @Test func photosAlbumSelectionUsesAlbumNameForDisplay() {
         let selection = PhotosSelection(
             mode: .album(localIdentifier: "album-1", name: "Favorites"),
