@@ -85,7 +85,6 @@ final class ImageFileScanner {
             }
 
             if SupportedImageFormats.contains(fileURL) {
-                print("File discovered: \(fileURL.lastPathComponent)")
                 supportedFileURLs.append(fileURL)
                 emitScanProgress(
                     completedCandidateCount: Int64(offset + 1),
@@ -95,7 +94,6 @@ final class ImageFileScanner {
                     progressHandler: progressHandler
                 )
             } else {
-                print("File skipped because unsupported extension: \(fileURL.lastPathComponent)")
                 emitScanProgress(
                     completedCandidateCount: Int64(offset + 1),
                     candidateCount: candidateCount,
@@ -131,10 +129,7 @@ final class ImageFileScanner {
 
         for case let fileURL as URL in enumerator {
             guard !Task.isCancelled else {
-                return supportedFileURLs.sorted {
-                    relativePath(for: $0, relativeTo: folderURL)
-                        .localizedStandardCompare(relativePath(for: $1, relativeTo: folderURL)) == .orderedAscending
-                }
+                return sortedByRelativePath(supportedFileURLs, relativeTo: folderURL)
             }
 
             scannedCount += 1
@@ -158,7 +153,6 @@ final class ImageFileScanner {
             }
 
             if SupportedImageFormats.contains(fileURL) {
-                print("File discovered: \(relativePath(for: fileURL, relativeTo: folderURL))")
                 supportedFileURLs.append(fileURL)
                 emitScanProgress(
                     completedCandidateCount: scannedCount,
@@ -168,7 +162,6 @@ final class ImageFileScanner {
                     progressHandler: progressHandler
                 )
             } else {
-                print("File skipped because unsupported extension: \(relativePath(for: fileURL, relativeTo: folderURL))")
                 emitScanProgress(
                     completedCandidateCount: scannedCount,
                     candidateCount: 0,
@@ -179,10 +172,7 @@ final class ImageFileScanner {
             }
         }
 
-        return supportedFileURLs.sorted {
-            relativePath(for: $0, relativeTo: folderURL)
-                .localizedStandardCompare(relativePath(for: $1, relativeTo: folderURL)) == .orderedAscending
-        }
+        return sortedByRelativePath(supportedFileURLs, relativeTo: folderURL)
     }
 
     /// Emits scan progress using the known supported-file total when available.
@@ -220,6 +210,17 @@ final class ImageFileScanner {
         let folderName = url.lastPathComponent
         return folderName == AIAnalysisPackagePaths.folderName
             || folderName.contains("_\(AIAnalysisPackagePaths.folderName)_")
+    }
+
+    /// Sorts URLs by relative path while computing each relative path only once.
+    nonisolated private func sortedByRelativePath(_ urls: [URL], relativeTo folderURL: URL) -> [URL] {
+        urls.map { url in
+            (url: url, relativePath: relativePath(for: url, relativeTo: folderURL))
+        }
+        .sorted {
+            $0.relativePath.localizedStandardCompare($1.relativePath) == .orderedAscending
+        }
+        .map(\.url)
     }
 
     /// Builds a stable display/sort path relative to the selected dataset folder.
