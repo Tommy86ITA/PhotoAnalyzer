@@ -17,6 +17,20 @@ nonisolated struct MaterializedPhotosAsset {
     let originalFilename: String?
     let fileURL: URL
     let representation: PhotosAssetRepresentation
+
+    var displayInfo: SourceFileDisplayInfo {
+        SourceFileDisplayInfo(
+            fileName: originalFilename ?? fileURL.lastPathComponent,
+            sourceFile: "photos://asset/\(encodedAssetIdentifier)"
+        )
+    }
+
+    private var encodedAssetIdentifier: String {
+        var allowedCharacters = CharacterSet.urlPathAllowed
+        allowedCharacters.remove(charactersIn: "/")
+        return assetLocalIdentifier.addingPercentEncoding(withAllowedCharacters: allowedCharacters)
+            ?? assetLocalIdentifier
+    }
 }
 
 /// Result of exporting a Photos selection to physical files.
@@ -27,6 +41,10 @@ nonisolated struct PhotosMaterializationResult {
 
     var fileURLs: [URL] {
         assets.map(\.fileURL)
+    }
+
+    var displayInfoByFileURL: [URL: SourceFileDisplayInfo] {
+        Dictionary(uniqueKeysWithValues: assets.map { ($0.fileURL, $0.displayInfo) })
     }
 }
 
@@ -126,7 +144,7 @@ final class PhotosLibraryAssetExporter {
                 try? FileManager.default.removeItem(at: destinationURL)
                 skippedAssets.append(PhotosAssetExportFailure(
                     assetLocalIdentifier: localIdentifier,
-                    reason: error.localizedDescription
+                    reason: exportFailureReason(for: error)
                 ))
             }
         }
@@ -216,6 +234,16 @@ private extension PhotosLibraryAssetExporter {
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: ":", with: "_")
         return sanitizedIdentifier.isEmpty ? "photos_asset" : sanitizedIdentifier
+    }
+
+    func exportFailureReason(for error: Error) -> String {
+        let nsError = error as NSError
+        if nsError.domain == PHPhotosErrorDomain,
+           PHPhotosError.Code(rawValue: nsError.code) == .networkAccessRequired {
+            return "Original asset is stored in iCloud and network access is disabled."
+        }
+
+        return error.localizedDescription
     }
 }
 #endif

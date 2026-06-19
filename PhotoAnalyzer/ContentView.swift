@@ -486,7 +486,8 @@ struct ContentView: View {
                     sourceFolderURL: result.workspace.directoryURL,
                     packageDatasetName: "Photos Library",
                     outputFolderURL: outputFolderURL,
-                    fileURLs: result.fileURLs
+                    fileURLs: result.fileURLs,
+                    displayInfoByFileURL: result.displayInfoByFileURL
                 ),
                 progressHandler: { progress in
                     Task { @MainActor in
@@ -499,7 +500,10 @@ struct ContentView: View {
             datasetState.supportedFileCount = pipelineResult.supportedFileCount + result.skippedAssets.count
             datasetState.analyzedPhotoCount = pipelineResult.analyzedPhotoCount
             datasetState.analysisStatus = .completed
-            packageState = AIPackageUIState(packageURL: pipelineResult.paths.packageURL)
+            packageState = AIPackageUIState(
+                packageURL: pipelineResult.paths.packageURL,
+                error: AppErrorInfo.photosSkippedAssets(result.skippedAssets)
+            )
             analysisPhase = .completed
             contactSheetPreview.load(from: pipelineResult.paths.packageURL)
         } catch AnalysisPipelineError.noSupportedFiles {

@@ -84,8 +84,8 @@ nonisolated struct ContactSheetPageRenderer {
                     ContactSheetIndexRow(
                         index: formattedIndex,
                         sheet: sheetFileName,
-                        fileName: fileURL.lastPathComponent,
-                        sourceFile: fileURL.path,
+                        fileName: item.displayInfo?.fileName ?? fileURL.lastPathComponent,
+                        sourceFile: item.displayInfo?.sourceFile ?? fileURL.path,
                         row: row + 1,
                         column: column + 1,
                         error: thumbnailResult.error

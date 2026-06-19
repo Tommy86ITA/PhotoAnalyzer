@@ -29,6 +29,7 @@ nonisolated struct AnalysisPipelineDependencies: Sendable {
         _ sourceFileURLs: [URL],
         _ statistics: PhotoStatistics,
         _ paths: AIAnalysisPackagePaths,
+        _ displayInfoByFileURL: [URL: SourceFileDisplayInfo],
         _ progressHandler: (@Sendable (ProgressSnapshot) -> Void)?
     ) throws -> AIAnalysisPackagePaths
 
@@ -36,6 +37,7 @@ nonisolated struct AnalysisPipelineDependencies: Sendable {
         _ folderURL: URL,
         _ sourceFileURLs: [URL],
         _ paths: AIAnalysisPackagePaths,
+        _ displayInfoByFileURL: [URL: SourceFileDisplayInfo],
         _ progressHandler: (@Sendable (ProgressSnapshot) -> Void)?
     ) async throws -> Void
 
@@ -69,21 +71,23 @@ nonisolated struct AnalysisPipelineDependencies: Sendable {
         buildStatistics: { photos in
             PhotoStatisticsService().buildStatistics(from: photos)
         },
-        exportDataFiles: { folderURL, metadata, sourceFileURLs, statistics, paths, progressHandler in
+        exportDataFiles: { folderURL, metadata, sourceFileURLs, statistics, paths, displayInfoByFileURL, progressHandler in
             try AIAnalysisPackageExporter().exportDataFiles(
                 for: folderURL,
                 metadata: metadata,
                 sourceFileURLs: sourceFileURLs,
                 statistics: statistics,
                 paths: paths,
+                displayInfoByFileURL: displayInfoByFileURL,
                 progressHandler: progressHandler
             )
         },
-        exportContactSheet: { folderURL, sourceFileURLs, paths, progressHandler in
+        exportContactSheet: { folderURL, sourceFileURLs, paths, displayInfoByFileURL, progressHandler in
             try await AIAnalysisPackageExporter().exportContactSheet(
                 folderURL: folderURL,
                 sourceFileURLs: sourceFileURLs,
                 paths: paths,
+                displayInfoByFileURL: displayInfoByFileURL,
                 progressHandler: progressHandler
             )
         },

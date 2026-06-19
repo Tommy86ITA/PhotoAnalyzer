@@ -38,4 +38,16 @@ struct AnalysisSourceTests {
         #expect(selection.representation == .current)
         #expect(selection.allowsNetworkAccess)
     }
+
+    @Test func materializedPhotosAssetDisplayInfoUsesStablePhotosURI() {
+        let asset = MaterializedPhotosAsset(
+            assetLocalIdentifier: "ABCD/L0/001",
+            originalFilename: "IMG_0001.HEIC",
+            fileURL: URL(fileURLWithPath: "/tmp/materialized.heic"),
+            representation: .original
+        )
+
+        #expect(asset.displayInfo.fileName == "IMG_0001.HEIC")
+        #expect(asset.displayInfo.sourceFile == "photos://asset/ABCD%2FL0%2F001")
+    }
 }

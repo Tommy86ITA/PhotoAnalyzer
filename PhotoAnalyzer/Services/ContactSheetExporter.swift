@@ -31,6 +31,7 @@ final class ContactSheetExporter {
 			folderURL: folderURL,
 			fileURLs: fileURLs,
 			paths: paths,
+			displayInfoByFileURL: [:],
 			progressHandler: nil
 		)
 	}
@@ -46,6 +47,7 @@ final class ContactSheetExporter {
 		folderURL: URL,
 		fileURLs: [URL],
 		paths: AIAnalysisPackagePaths,
+		displayInfoByFileURL: [URL: SourceFileDisplayInfo] = [:],
 		progressHandler: (@Sendable (ProgressSnapshot) -> Void)?
 	) async throws {
 		try Task.checkCancellation()
@@ -58,6 +60,7 @@ final class ContactSheetExporter {
 		let thumbnailResults = try await PerformanceLogger.measure("Loading thumbnails") {
 			try await loadThumbnailResults(
 				for: fileURLs,
+				displayInfoByFileURL: displayInfoByFileURL,
 				totalProgressUnits: totalProgressUnits,
 				progressHandler: progressHandler
 			)
@@ -155,6 +158,7 @@ final class ContactSheetExporter {
 
 	nonisolated private func loadThumbnailResults(
 		for fileURLs: [URL],
+		displayInfoByFileURL: [URL: SourceFileDisplayInfo],
 		totalProgressUnits: Int64,
 		progressHandler: (@Sendable (ProgressSnapshot) -> Void)?
 	) async throws -> [IndexedThumbnailResult] {
@@ -180,6 +184,7 @@ final class ContactSheetExporter {
 						return IndexedThumbnailResult(
 							index: index,
 							fileURL: fileURL,
+							displayInfo: displayInfoByFileURL[fileURL],
 							thumbnail: thumbnail
 						)
 					}

@@ -21,17 +21,20 @@ nonisolated struct PreparedAnalysisPipelineRequest: Sendable {
     let packageDatasetName: String?
     let outputFolderURL: URL?
     let fileURLs: [URL]
+    let displayInfoByFileURL: [URL: SourceFileDisplayInfo]
 
     init(
         sourceFolderURL: URL,
         packageDatasetName: String? = nil,
         outputFolderURL: URL?,
-        fileURLs: [URL]
+        fileURLs: [URL],
+        displayInfoByFileURL: [URL: SourceFileDisplayInfo] = [:]
     ) {
         self.sourceFolderURL = sourceFolderURL
         self.packageDatasetName = packageDatasetName
         self.outputFolderURL = outputFolderURL
         self.fileURLs = fileURLs
+        self.displayInfoByFileURL = displayInfoByFileURL
     }
 }
 
@@ -248,6 +251,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
                 folderAnalysisResult.fileURLs,
                 generatedStatistics,
                 packagePaths,
+                request.displayInfoByFileURL,
                 dataExportProgressHandler
             )
         }
@@ -272,6 +276,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
                 request.sourceFolderURL,
                 folderAnalysisResult.fileURLs,
                 paths,
+                request.displayInfoByFileURL,
                 contactSheetProgressHandler
             )
         }

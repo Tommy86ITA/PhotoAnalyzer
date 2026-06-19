@@ -7,6 +7,11 @@
 
 import Foundation
 
+nonisolated struct SourceFileDisplayInfo: Equatable, Sendable {
+    let fileName: String
+    let sourceFile: String
+}
+
 nonisolated struct ContactSheetIndexRow {
     let index: String
     let sheet: String
@@ -20,6 +25,7 @@ nonisolated struct ContactSheetIndexRow {
 nonisolated struct IndexedThumbnailResult {
     let index: Int
     let fileURL: URL
+    let displayInfo: SourceFileDisplayInfo?
     let thumbnail: ThumbnailLoadResult?
 }
 

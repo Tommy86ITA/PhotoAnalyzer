@@ -218,17 +218,22 @@ nonisolated struct IndexedExportPhotoMetadata: Encodable, Sendable {
     let thumbnailIndex: String?
     let contactSheetPage: Int?
     let contactSheetFile: String?
+    let displayInfo: SourceFileDisplayInfo?
 
     enum CodingKeys: String, CodingKey {
         case thumbnailIndex = "ThumbnailIndex"
         case contactSheetPage = "ContactSheetPage"
         case contactSheetFile = "ContactSheetFile"
+        case displayFileName = "File:FileName"
+        case displaySourceFile = "SourceFile"
     }
 
     func encode(to encoder: Encoder) throws {
         try metadata.encode(to: encoder)
 
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(displayInfo?.fileName, forKey: .displayFileName)
+        try container.encodeIfPresent(displayInfo?.sourceFile, forKey: .displaySourceFile)
         try container.encodeIfPresent(thumbnailIndex, forKey: .thumbnailIndex)
         try container.encodeIfPresent(contactSheetPage, forKey: .contactSheetPage)
         try container.encodeIfPresent(contactSheetFile, forKey: .contactSheetFile)
