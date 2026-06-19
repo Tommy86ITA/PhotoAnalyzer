@@ -45,13 +45,14 @@ struct AIPackageCardView: View {
                 }
                 .padding(.top, 2)
 
-                if let errorMessage = packageState.errorMessage, !errorMessage.isEmpty {
-                    Text(errorMessage)
+                if let error = packageState.error {
+                    Text(error.userMessage)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .truncationMode(.tail)
                         .textSelection(.enabled)
+                        .help(error.debugDescription)
                 }
 
                 HStack(spacing: 10) {

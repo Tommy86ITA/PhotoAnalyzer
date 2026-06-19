@@ -9,12 +9,12 @@ import Foundation
 
 /// Exports a visual contact sheet and matching TSV index for analyzed photos.
 final class ContactSheetExporter {
-	private let thumbnailLoader = ThumbnailLoader()
-	private let pageRenderer = ContactSheetPageRenderer()
-	private let indexWriter = ContactSheetIndexWriter()
+	private let dependencies: ContactSheetExportDependencies
 
 	/// Creates a contact sheet exporter.
-	nonisolated init() {}
+	nonisolated init(dependencies: ContactSheetExportDependencies = .live) {
+		self.dependencies = dependencies
+	}
 
 	/// Exports `contact_sheet.jpg` and `index.tsv` into the package folder.
 	/// - Parameters:
@@ -82,11 +82,11 @@ final class ContactSheetExporter {
 				? paths.contactSheetURL
 				: paths.packageURL.appendingPathComponent(sheetFileName)
 
-			let renderResult = try pageRenderer.renderPage(
+			let renderResult = try dependencies.renderPage(
 				pageResults,
-				columns: columns,
-				sheetFileName: sheetFileName,
-				outputURL: sheetURL
+				columns,
+				sheetFileName,
+				sheetURL
 			)
 			exportSummary.merge(renderResult.summary)
 			indexRows.append(contentsOf: renderResult.indexRows)
@@ -106,7 +106,7 @@ final class ContactSheetExporter {
 
 		try Task.checkCancellation()
 		try PerformanceLogger.measure("Writing index.tsv") {
-			try indexWriter.write(indexRows, to: paths.indexURL)
+			try dependencies.writeIndex(indexRows, paths.indexURL)
 		}
 		progressHandler?(
 			ProgressSnapshot(
@@ -171,13 +171,10 @@ final class ContactSheetExporter {
 			try await withThrowingTaskGroup(of: IndexedThumbnailResult.self) { group in
 				for index in startIndex..<endIndex {
 					let fileURL = fileURLs[index]
-					let thumbnailLoader = self.thumbnailLoader
+					let loadThumbnail = dependencies.loadThumbnail
 					group.addTask {
 						try Task.checkCancellation()
-						let thumbnail = await thumbnailLoader.loadThumbnail(
-							from: fileURL,
-							maxPixelSize: maxPixelSize
-						)
+						let thumbnail = await loadThumbnail(fileURL, maxPixelSize)
 						try Task.checkCancellation()
 
 						return IndexedThumbnailResult(

@@ -10,11 +10,27 @@
 		005EAEB12FE3EE9C00007A94 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 005EAEB02FE3EE9C00007A94 /* ZIPFoundation */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		0059D27E2FE525AB00D8BD1A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 009875AC2FE02FBB004E0A8D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 009875B32FE02FBB004E0A8D;
+			remoteInfo = PhotoAnalyzer;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		0059D27A2FE525AB00D8BD1A /* PhotoAnalyzerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PhotoAnalyzerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		009875B42FE02FBB004E0A8D /* PhotoAnalyzer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PhotoAnalyzer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		0059D27B2FE525AB00D8BD1A /* PhotoAnalyzerTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = PhotoAnalyzerTests;
+			sourceTree = "<group>";
+		};
 		009875B62FE02FBB004E0A8D /* PhotoAnalyzer */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			explicitFolders = (
@@ -26,6 +42,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		0059D2772FE525AB00D8BD1A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		009875B12FE02FBB004E0A8D /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -41,6 +64,7 @@
 			isa = PBXGroup;
 			children = (
 				009875B62FE02FBB004E0A8D /* PhotoAnalyzer */,
+				0059D27B2FE525AB00D8BD1A /* PhotoAnalyzerTests */,
 				009875B52FE02FBB004E0A8D /* Products */,
 			);
 			sourceTree = "<group>";
@@ -49,6 +73,7 @@
 			isa = PBXGroup;
 			children = (
 				009875B42FE02FBB004E0A8D /* PhotoAnalyzer.app */,
+				0059D27A2FE525AB00D8BD1A /* PhotoAnalyzerTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -56,6 +81,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		0059D2792FE525AB00D8BD1A /* PhotoAnalyzerTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0059D2802FE525AB00D8BD1A /* Build configuration list for PBXNativeTarget "PhotoAnalyzerTests" */;
+			buildPhases = (
+				0059D2762FE525AB00D8BD1A /* Sources */,
+				0059D2772FE525AB00D8BD1A /* Frameworks */,
+				0059D2782FE525AB00D8BD1A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0059D27F2FE525AB00D8BD1A /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				0059D27B2FE525AB00D8BD1A /* PhotoAnalyzerTests */,
+			);
+			name = PhotoAnalyzerTests;
+			packageProductDependencies = (
+			);
+			productName = PhotoAnalyzerTests;
+			productReference = 0059D27A2FE525AB00D8BD1A /* PhotoAnalyzerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		009875B32FE02FBB004E0A8D /* PhotoAnalyzer */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 009875BF2FE02FBC004E0A8D /* Build configuration list for PBXNativeTarget "PhotoAnalyzer" */;
@@ -89,6 +137,10 @@
 				LastSwiftUpdateCheck = 2650;
 				LastUpgradeCheck = 2650;
 				TargetAttributes = {
+					0059D2792FE525AB00D8BD1A = {
+						CreatedOnToolsVersion = 26.5;
+						TestTargetID = 009875B32FE02FBB004E0A8D;
+					};
 					009875B32FE02FBB004E0A8D = {
 						CreatedOnToolsVersion = 26.5;
 					};
@@ -112,11 +164,19 @@
 			projectRoot = "";
 			targets = (
 				009875B32FE02FBB004E0A8D /* PhotoAnalyzer */,
+				0059D2792FE525AB00D8BD1A /* PhotoAnalyzerTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		0059D2782FE525AB00D8BD1A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		009875B22FE02FBB004E0A8D /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -127,6 +187,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		0059D2762FE525AB00D8BD1A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		009875B02FE02FBB004E0A8D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -136,7 +203,55 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		0059D27F2FE525AB00D8BD1A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 009875B32FE02FBB004E0A8D /* PhotoAnalyzer */;
+			targetProxy = 0059D27E2FE525AB00D8BD1A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		0059D2812FE525AB00D8BD1A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 85AGZJQ4GK;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thomasamaranto.PhotoAnalyzerTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PhotoAnalyzer.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PhotoAnalyzer";
+			};
+			name = Debug;
+		};
+		0059D2822FE525AB00D8BD1A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 85AGZJQ4GK;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.thomasamaranto.PhotoAnalyzerTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PhotoAnalyzer.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/PhotoAnalyzer";
+			};
+			name = Release;
+		};
 		009875BD2FE02FBC004E0A8D /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -354,6 +469,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		0059D2802FE525AB00D8BD1A /* Build configuration list for PBXNativeTarget "PhotoAnalyzerTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0059D2812FE525AB00D8BD1A /* Debug */,
+				0059D2822FE525AB00D8BD1A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		009875AF2FE02FBB004E0A8D /* Build configuration list for PBXProject "PhotoAnalyzer" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

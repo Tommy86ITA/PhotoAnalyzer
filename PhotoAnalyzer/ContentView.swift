@@ -253,7 +253,7 @@ struct ContentView: View {
             contactSheetExists: false,
             indexExists: false,
             archiveExists: false,
-            errorMessage: nil
+            error: nil
         )
 
         do {
@@ -294,10 +294,10 @@ struct ContentView: View {
             analysisPhase = .cancelled
             analysisProgress = nil
         } catch {
-            let errorDescription = "\(error.localizedDescription) (\(String(reflecting: error)))"
-            print("AI package export failed: \(errorDescription)")
+            let appError = AppErrorInfo.exportFailure(error)
+            print("AI package export failed: \(appError.debugDescription)")
             datasetState.analysisStatus = statistics == nil ? .failed : .completedWithExportError
-            packageState = AIPackageUIState(packageURL: packagePaths.packageURL, errorMessage: errorDescription)
+            packageState = AIPackageUIState(packageURL: packagePaths.packageURL, error: appError)
             analysisPhase = statistics == nil ? .failed : .exportFailed
             analysisProgress = nil
         }

@@ -27,6 +27,12 @@ nonisolated struct AnalysisPipelineResult: Sendable {
 nonisolated struct AnalysisPipelineService: Sendable {
     typealias ProgressHandler = @Sendable (AnalysisProgress) -> Void
 
+    private let dependencies: AnalysisPipelineDependencies
+
+    init(dependencies: AnalysisPipelineDependencies = .live) {
+        self.dependencies = dependencies
+    }
+
     func run(
         request: AnalysisPipelineRequest,
         progressHandler: ProgressHandler?
@@ -72,11 +78,11 @@ nonisolated struct AnalysisPipelineService: Sendable {
         )
         let fileURLs = try await runCancellableDetached {
             try Task.checkCancellation()
-            return ImageFileScanner().imageFileURLs(
-                in: request.folderURL,
-                includeSubfolders: request.includeSubfolders,
-                expectedSupportedFileCount: request.expectedSupportedFileCount,
-                progressHandler: scanningProgressHandler
+            return dependencies.scanImageFiles(
+                request.folderURL,
+                request.includeSubfolders,
+                request.expectedSupportedFileCount,
+                scanningProgressHandler
             )
         }
         try Task.checkCancellation()
@@ -101,9 +107,9 @@ nonisolated struct AnalysisPipelineService: Sendable {
             progressHandler: progressHandler
         )
         let folderAnalysisResult = try await runCancellableDetached {
-            try await FolderAnalysisService().analyzeFilesWithExportMetadata(
+            try await dependencies.analyzeFiles(
                 fileURLs,
-                progressHandler: metadataProgressHandler
+                metadataProgressHandler
             )
         }
         try Task.checkCancellation()
@@ -125,7 +131,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
         )
         let generatedStatistics = try await runCancellableDetached {
             try Task.checkCancellation()
-            return PhotoStatisticsService().buildStatistics(from: folderAnalysisResult.photos)
+            return dependencies.buildStatistics(folderAnalysisResult.photos)
         }
         try Task.checkCancellation()
         completedPipelineUnitCount += 1
@@ -136,8 +142,6 @@ nonisolated struct AnalysisPipelineService: Sendable {
             phase: .generatingStatistics,
             progressHandler: progressHandler
         )
-
-        let exporter = AIAnalysisPackageExporter()
 
         emitProgress(
             completedUnitCount: completedPipelineUnitCount,
@@ -153,13 +157,13 @@ nonisolated struct AnalysisPipelineService: Sendable {
             progressHandler: progressHandler
         )
         let paths = try await runCancellableDetached {
-            try exporter.exportDataFiles(
-                for: request.folderURL,
-                metadata: folderAnalysisResult.exportMetadata,
-                sourceFileURLs: folderAnalysisResult.fileURLs,
-                statistics: generatedStatistics,
-                paths: packagePaths,
-                progressHandler: dataExportProgressHandler
+            try dependencies.exportDataFiles(
+                request.folderURL,
+                folderAnalysisResult.exportMetadata,
+                folderAnalysisResult.fileURLs,
+                generatedStatistics,
+                packagePaths,
+                dataExportProgressHandler
             )
         }
         completedPipelineUnitCount += 2
@@ -179,11 +183,11 @@ nonisolated struct AnalysisPipelineService: Sendable {
             progressHandler: progressHandler
         )
         try await runCancellableDetached {
-            try await exporter.exportContactSheet(
-                folderURL: request.folderURL,
-                sourceFileURLs: folderAnalysisResult.fileURLs,
-                paths: paths,
-                progressHandler: contactSheetProgressHandler
+            try await dependencies.exportContactSheet(
+                request.folderURL,
+                folderAnalysisResult.fileURLs,
+                paths,
+                contactSheetProgressHandler
             )
         }
         try Task.checkCancellation()
@@ -205,9 +209,9 @@ nonisolated struct AnalysisPipelineService: Sendable {
             progressHandler: progressHandler
         )
         _ = try await runCancellableDetached {
-            try exporter.archivePackage(
-                paths: paths,
-                progressHandler: archiveProgressHandler
+            try dependencies.archivePackage(
+                paths,
+                archiveProgressHandler
             )
         }
         try Task.checkCancellation()
