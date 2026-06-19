@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import PhotosUI
 
 /// Top action area for choosing a dataset and generating an AI package.
 struct DatasetActionView: View {
@@ -17,9 +18,16 @@ struct DatasetActionView: View {
 
 	let datasetState: DatasetUIState
 	let outputFolderURL: URL?
+	let sourceIconName: String
+	let sourceText: String
+	let sourcePath: String?
+	let isSourcePlaceholder: Bool
+	let isFolderSource: Bool
+	let canAnalyze: Bool
 	let isAnalyzing: Bool
 	let isCountingSupportedFiles: Bool
 	@Binding var includeSubfolders: Bool
+	@Binding var selectedPhotoItems: [PhotosPickerItem]
 	let selectFolder: () -> Void
 	let selectOutputFolder: () -> Void
 	let analyze: () -> Void
@@ -31,11 +39,11 @@ struct DatasetActionView: View {
 				HStack(alignment: .center, spacing: 18) {
 					VStack(alignment: .leading, spacing: 10) {
 						pathRow(
-							iconName: datasetState.folderURL == nil ? "folder" : "folder.fill",
+							iconName: sourceIconName,
 							title: "Source",
-							text: datasetState.folderPathText,
-							path: datasetState.folderURL?.path,
-							isPlaceholder: datasetState.folderURL == nil
+							text: sourceText,
+							path: sourcePath,
+							isPlaceholder: isSourcePlaceholder
 						)
 
 						pathRow(
@@ -51,7 +59,7 @@ struct DatasetActionView: View {
 					VStack(alignment: .leading, spacing: 10) {
 						Toggle("Include subfolders", isOn: $includeSubfolders)
 							.toggleStyle(.checkbox)
-							.disabled(isAnalyzing || isCountingSupportedFiles)
+							.disabled(!isFolderSource || isAnalyzing || isCountingSupportedFiles)
 
 						Color.clear
 							.frame(height: 24)
@@ -60,7 +68,17 @@ struct DatasetActionView: View {
 
 					VStack(alignment: .trailing, spacing: 8) {
 						Button(action: selectFolder) {
-							Label("Select Source", systemImage: "folder.badge.plus")
+							Label("Select Folder", systemImage: "folder.badge.plus")
+						}
+						.disabled(isAnalyzing || isCountingSupportedFiles)
+
+						PhotosPicker(
+							selection: $selectedPhotoItems,
+							maxSelectionCount: nil,
+							matching: .images,
+							photoLibrary: .shared()
+						) {
+							Label("Select Photos", systemImage: "photo.on.rectangle.angled")
 						}
 						.disabled(isAnalyzing || isCountingSupportedFiles)
 
@@ -144,7 +162,7 @@ struct DatasetActionView: View {
 				Label("Analyze & Generate AI Package", systemImage: "shippingbox")
 			}
 			.buttonStyle(.borderedProminent)
-			.disabled(datasetState.folderURL == nil || datasetState.supportedFileCount == 0 || isCountingSupportedFiles)
+			.disabled(!canAnalyze || isCountingSupportedFiles)
 			.frame(maxWidth: .infinity)
 		}
 	}

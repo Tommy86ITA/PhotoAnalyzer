@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import PhotosUI
 
 /// Main interface for the PhotoAnalyzer macOS application.
 struct ContentView: View {
@@ -21,6 +22,12 @@ struct ContentView: View {
 
     /// The security-scoped folder URL selected by the user.
     @State private var selectedFolderURL: URL?
+
+    /// The currently selected analysis source.
+    @State private var selectedAnalysisSource: AnalysisSource?
+
+    /// Photos picker selection used to build a Photos Library source.
+    @State private var selectedPhotoItems: [PhotosPickerItem] = []
 
     /// Optional security-scoped output folder for generated AI packages.
     @State private var selectedOutputFolderURL: URL?
@@ -70,12 +77,19 @@ struct ContentView: View {
                 DatasetActionView(
                     datasetState: datasetState,
                     outputFolderURL: selectedOutputFolderURL,
+                    sourceIconName: sourceIconName,
+                    sourceText: sourceText,
+                    sourcePath: sourcePath,
+                    isSourcePlaceholder: selectedAnalysisSource == nil,
+                    isFolderSource: isFolderSource,
+                    canAnalyze: canAnalyzeSelectedSource,
                     isAnalyzing: isAnalyzing,
                     isCountingSupportedFiles: isCountingSupportedFiles,
                     includeSubfolders: $includeSubfolders,
+                    selectedPhotoItems: $selectedPhotoItems,
                     selectFolder: selectFolder,
                     selectOutputFolder: selectOutputFolder,
-                    analyze: analyzeSelectedFolder,
+                    analyze: analyzeSelectedSource,
                     cancelAnalysis: cancelAnalysis
                 )
 
@@ -130,6 +144,45 @@ struct ContentView: View {
         .onChange(of: includeSubfolders) { _, _ in
             updateSupportedFileCountForSelectedFolder()
         }
+        .onChange(of: selectedPhotoItems) { _, newItems in
+            selectPhotos(from: newItems)
+        }
+    }
+
+    private var sourceIconName: String {
+        switch selectedAnalysisSource {
+        case .folder:
+            "folder.fill"
+        case .photosLibrary:
+            "photo.on.rectangle.angled"
+        case nil:
+            "folder"
+        }
+    }
+
+    private var sourceText: String {
+        selectedAnalysisSource?.displayName ?? "No source selected"
+    }
+
+    private var sourcePath: String? {
+        guard case .folder(let source) = selectedAnalysisSource else {
+            return nil
+        }
+        return source.folderURL.path
+    }
+
+    private var isFolderSource: Bool {
+        if case .folder = selectedAnalysisSource {
+            return true
+        }
+        return false
+    }
+
+    private var canAnalyzeSelectedSource: Bool {
+        guard selectedAnalysisSource != nil else {
+            return false
+        }
+        return (datasetState.supportedFileCount ?? 0) > 0
     }
 
     private var footerProgress: AnalysisProgress? {
@@ -155,6 +208,11 @@ struct ContentView: View {
         }
 
         selectedFolderURL = url
+        selectedAnalysisSource = .folder(FolderAnalysisSource(
+            folderURL: url,
+            includeSubfolders: includeSubfolders
+        ))
+        selectedPhotoItems = []
         statistics = nil
         packageState = .initial
         contactSheetPreview.reset()
@@ -167,6 +225,48 @@ struct ContentView: View {
             analysisStatus: .folderSelected
         )
         startSupportedFileCount(for: url, includeSubfolders: includeSubfolders)
+    }
+
+    /// Stores selected Photos Library asset identifiers as the active analysis source.
+    private func selectPhotos(from items: [PhotosPickerItem]) {
+        guard !isAnalyzing, !isCountingSupportedFiles else {
+            return
+        }
+
+        let localIdentifiers = items.compactMap(\.itemIdentifier)
+
+        selectedFolderURL = nil
+        supportedFileCountTask?.cancel()
+        supportedFileCountTask = nil
+        isCountingSupportedFiles = false
+        statistics = nil
+        packageState = .initial
+        contactSheetPreview.reset()
+        analysisProgress = nil
+
+        guard !localIdentifiers.isEmpty else {
+            if case .folder = selectedAnalysisSource {
+                return
+            }
+
+            selectedAnalysisSource = nil
+            datasetState = .initial
+            analysisPhase = .ready
+            return
+        }
+
+        selectedAnalysisSource = .photosLibrary(PhotosSelection(
+            mode: .assets(localIdentifiers: localIdentifiers),
+            representation: .original,
+            allowsNetworkAccess: false
+        ))
+        datasetState = DatasetUIState(
+            folderURL: nil,
+            supportedFileCount: localIdentifiers.count,
+            analyzedPhotoCount: nil,
+            analysisStatus: .sourceSelected
+        )
+        analysisPhase = .ready
     }
 
     /// Opens a folder picker and stores the optional AI package output folder.
@@ -190,18 +290,44 @@ struct ContentView: View {
     }
 
     /// Starts analysis for the selected folder.
-    private func analyzeSelectedFolder() {
+    private func analyzeSelectedSource() {
         guard !isAnalyzing, !isCountingSupportedFiles else {
             return
         }
 
-        guard let selectedFolderURL else {
+        guard let selectedAnalysisSource else {
             analysisPhase = .noFolderSelected
             return
         }
 
         guard (datasetState.supportedFileCount ?? 0) > 0 else {
             analysisPhase = .noSupportedFiles
+            return
+        }
+
+        switch selectedAnalysisSource {
+        case .folder(let source):
+            let task = Task {
+                await analyzeSelectedFolderFiles(in: source.folderURL)
+            }
+            analysisTask = task
+        case .photosLibrary(let selection):
+            guard selectedOutputFolderURL != nil else {
+                analysisPhase = .noOutputFolderSelected
+                return
+            }
+
+            let task = Task {
+                await analyzeSelectedPhotos(selection)
+            }
+            analysisTask = task
+        }
+    }
+
+    /// Starts analysis for the selected folder.
+    private func analyzeSelectedFolder() {
+        guard let selectedFolderURL else {
+            analysisPhase = .noFolderSelected
             return
         }
 
@@ -303,6 +429,107 @@ struct ContentView: View {
         }
     }
 
+    /// Materializes selected Photos Library assets and runs the file-based pipeline.
+    private func analyzeSelectedPhotos(_ selection: PhotosSelection) async {
+        guard !isAnalyzing else {
+            return
+        }
+
+        guard let outputFolderURL = selectedOutputFolderURL else {
+            analysisPhase = .noOutputFolderSelected
+            analysisTask = nil
+            return
+        }
+
+        let packagePaths = AIAnalysisPackagePaths(
+            datasetName: "Photos Library",
+            datasetFolderURL: FileManager.default.temporaryDirectory,
+            outputFolderURL: outputFolderURL
+        )
+
+        isAnalyzing = true
+        supportedFileCountTask?.cancel()
+        supportedFileCountTask = nil
+        isCountingSupportedFiles = false
+        defer {
+            isAnalyzing = false
+            analysisTask = nil
+        }
+
+        statistics = nil
+        contactSheetPreview.reset()
+        analysisProgress = AnalysisProgress(fractionCompleted: 0, message: "Preparing Photos assets...")
+        datasetState.analysisStatus = .analyzing
+        datasetState.analyzedPhotoCount = nil
+        packageState = AIPackageUIState(
+            status: .generating,
+            packageURL: packagePaths.packageURL,
+            metadataExists: false,
+            statisticsExists: false,
+            contactSheetExists: false,
+            indexExists: false,
+            archiveExists: false,
+            error: nil
+        )
+
+        var materializationResult: PhotosMaterializationResult?
+
+        do {
+            let result = try await PhotosLibraryAssetExporter().export(selection: selection)
+            materializationResult = result
+            defer {
+                result.workspace.cleanup()
+            }
+
+            let pipelineResult = try await AnalysisPipelineService().runPreparedFiles(
+                request: PreparedAnalysisPipelineRequest(
+                    sourceFolderURL: result.workspace.directoryURL,
+                    packageDatasetName: "Photos Library",
+                    outputFolderURL: outputFolderURL,
+                    fileURLs: result.fileURLs
+                ),
+                progressHandler: { progress in
+                    Task { @MainActor in
+                        applyPipelineProgress(progress)
+                    }
+                }
+            )
+
+            statistics = pipelineResult.statistics
+            datasetState.supportedFileCount = pipelineResult.supportedFileCount + result.skippedAssets.count
+            datasetState.analyzedPhotoCount = pipelineResult.analyzedPhotoCount
+            datasetState.analysisStatus = .completed
+            packageState = AIPackageUIState(packageURL: pipelineResult.paths.packageURL)
+            analysisPhase = .completed
+            contactSheetPreview.load(from: pipelineResult.paths.packageURL)
+        } catch AnalysisPipelineError.noSupportedFiles {
+            materializationResult?.workspace.cleanup()
+            datasetState.supportedFileCount = 0
+            datasetState.analysisStatus = .sourceSelected
+            packageState = .initial
+            analysisPhase = .noSupportedFiles
+            analysisProgress = nil
+        } catch is CancellationError {
+            materializationResult?.workspace.cleanup()
+            print("Photos analysis cancelled.")
+            statistics = nil
+            contactSheetPreview.reset()
+            datasetState.analysisStatus = .cancelled
+            datasetState.analyzedPhotoCount = nil
+            packageState = .initial
+            analysisPhase = .cancelled
+            analysisProgress = nil
+        } catch {
+            materializationResult?.workspace.cleanup()
+            let appError = AppErrorInfo.exportFailure(error)
+            print("Photos package export failed: \(appError.debugDescription)")
+            datasetState.analysisStatus = statistics == nil ? .failed : .completedWithExportError
+            packageState = AIPackageUIState(packageURL: packagePaths.packageURL, error: appError)
+            analysisPhase = statistics == nil ? .failed : .exportFailed
+            analysisProgress = nil
+        }
+    }
+
     /// Applies service progress to the dashboard state.
     private func applyPipelineProgress(_ progress: AnalysisProgress) {
         analysisProgress = progress
@@ -350,6 +577,11 @@ struct ContentView: View {
         guard !isAnalyzing, !isCountingSupportedFiles, let selectedFolderURL else {
             return
         }
+
+        selectedAnalysisSource = .folder(FolderAnalysisSource(
+            folderURL: selectedFolderURL,
+            includeSubfolders: includeSubfolders
+        ))
 
         statistics = nil
         packageState = .initial

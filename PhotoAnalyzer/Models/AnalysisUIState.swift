@@ -11,6 +11,7 @@ import Foundation
 enum AnalysisStatus {
     case ready
     case folderSelected
+    case sourceSelected
     case analyzing
     case cancelled
     case completed
@@ -23,6 +24,8 @@ enum AnalysisStatus {
             return "Ready"
         case .folderSelected:
             return "Folder selected"
+        case .sourceSelected:
+            return "Source selected"
         case .analyzing:
             return "Analyzing"
         case .cancelled:
@@ -41,6 +44,7 @@ enum AnalysisStatus {
 enum AnalysisPhase: Sendable {
     case ready
     case noFolderSelected
+    case noOutputFolderSelected
     case noSupportedFiles
     case scanningFiles
     case readingMetadata
@@ -59,6 +63,8 @@ enum AnalysisPhase: Sendable {
             return "Ready"
         case .noFolderSelected:
             return "Select a folder first"
+        case .noOutputFolderSelected:
+            return "Select an output folder first"
         case .noSupportedFiles:
             return "No supported files found"
         case .scanningFiles:
