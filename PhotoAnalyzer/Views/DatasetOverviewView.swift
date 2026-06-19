@@ -13,61 +13,49 @@ struct DatasetOverviewView: View {
 
     var body: some View {
         GroupBox("Dataset Overview") {
-            VStack(spacing: 12) {
+            VStack(spacing: 8) {
                 DashboardMetricRow(
                     title: "Most Used Camera",
                     value: mostUsedValue(in: statistics?.photosByCamera) ?? "--",
-                    systemImage: "camera"
+                    systemImage: "camera",
+                    helpText: "Camera model with the highest number of analyzed photos."
                 )
                 DashboardMetricRow(
                     title: "Most Used Lens",
                     value: mostUsedValue(in: statistics?.lensDistribution) ?? "--",
-                    systemImage: "camera.macro"
+                    systemImage: "camera.macro",
+                    helpText: "Lens model with the highest number of analyzed photos."
                 )
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Top Focal Lengths", systemImage: "scope")
-                        .foregroundStyle(.secondary)
-
-                    if topFocalLengthUsage.isEmpty {
-                        Text("--")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(Array(topFocalLengthUsage.enumerated()), id: \.offset) { index, usage in
-                            HStack {
-                                Text("#\(index + 1)")
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 28, alignment: .leading)
-
-                                Text("\(usage.focalLength) mm: \(usage.count)")
-                                    .fontWeight(.medium)
-
-                                Spacer(minLength: 0)
-                            }
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                DashboardMetricRow(
+                    title: "Most Used Focal Lengths",
+                    value: topFocalLengthsText,
+                    systemImage: "scope",
+                    helpText: "Most frequent 35mm-equivalent focal lengths and their photo counts."
+                )
 
                 Divider()
 
                 DashboardMetricRow(
                     title: "Photo Types",
                     value: photoTypesText,
-                    systemImage: "rectangle.stack"
+                    systemImage: "rectangle.stack",
+                    helpText: "Photo categories detected in the analyzed metadata."
                 )
                 DashboardMetricRow(
                     title: "Cameras Detected",
                     value: countText(statistics?.photosByCamera.count),
-                    systemImage: "camera"
+                    systemImage: "camera",
+                    helpText: "Number of distinct camera models found in the dataset."
                 )
                 DashboardMetricRow(
                     title: "Lenses Detected",
                     value: countText(statistics?.lensDistribution.count),
-                    systemImage: "camera.macro"
+                    systemImage: "camera.macro",
+                    helpText: "Number of distinct lens models found in the dataset."
                 )
             }
-            .padding(.vertical, 6)
+            .padding(.vertical, 4)
         }
     }
 
@@ -98,6 +86,16 @@ struct DatasetOverviewView: View {
         }
 
         return labels.isEmpty ? "--" : labels.joined(separator: ", ")
+    }
+
+    private var topFocalLengthsText: String {
+        guard !topFocalLengthUsage.isEmpty else {
+            return "--"
+        }
+
+        return topFocalLengthUsage
+            .map { "\($0.focalLength) mm: \($0.count)" }
+            .joined(separator: ", ")
     }
 
     private func mostUsedValue(in counts: [String: Int]?) -> String? {

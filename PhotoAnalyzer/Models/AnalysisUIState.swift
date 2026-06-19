@@ -38,7 +38,7 @@ enum AnalysisStatus {
 }
 
 /// Detailed operation phase shown in the status footer.
-enum AnalysisPhase {
+enum AnalysisPhase: Sendable {
     case ready
     case noFolderSelected
     case noSupportedFiles
@@ -142,7 +142,7 @@ struct AIPackageUIState {
     var contactSheetExists: Bool
     var indexExists: Bool
     var archiveExists: Bool
-    var errorMessage: String?
+    var error: AppErrorInfo?
 
     static let initial = AIPackageUIState(
         status: .notGenerated,
@@ -152,7 +152,7 @@ struct AIPackageUIState {
         contactSheetExists: false,
         indexExists: false,
         archiveExists: false,
-        errorMessage: nil
+        error: nil
     )
 
     init(
@@ -163,7 +163,7 @@ struct AIPackageUIState {
         contactSheetExists: Bool,
         indexExists: Bool,
         archiveExists: Bool,
-        errorMessage: String?
+        error: AppErrorInfo?
     ) {
         self.status = status
         self.packageURL = packageURL
@@ -172,24 +172,28 @@ struct AIPackageUIState {
         self.contactSheetExists = contactSheetExists
         self.indexExists = indexExists
         self.archiveExists = archiveExists
-        self.errorMessage = errorMessage
+        self.error = error
     }
 
-    init(packageURL: URL, errorMessage: String? = nil) {
+    init(packageURL: URL, error: AppErrorInfo? = nil) {
         let paths = AIAnalysisPackagePaths(packageURL: packageURL)
         self.init(
-            status: errorMessage == nil ? .generated : .failed,
+            status: error == nil ? .generated : .failed,
             packageURL: packageURL,
             metadataExists: FileManager.default.fileExists(atPath: paths.metadataURL.path),
             statisticsExists: FileManager.default.fileExists(atPath: paths.statisticsURL.path),
             contactSheetExists: FileManager.default.fileExists(atPath: paths.contactSheetURL.path),
             indexExists: FileManager.default.fileExists(atPath: paths.indexURL.path),
             archiveExists: FileManager.default.fileExists(atPath: paths.archiveURL.path),
-            errorMessage: errorMessage
+            error: error
         )
     }
 
     var packagePathText: String {
         packageURL?.path ?? "--"
+    }
+
+    var errorMessage: String? {
+        error?.userMessage
     }
 }

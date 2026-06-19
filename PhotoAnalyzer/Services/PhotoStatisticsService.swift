@@ -227,11 +227,14 @@ final class PhotoStatisticsService {
     /// - Parameter value: The number to format.
     /// - Returns: A compact decimal string.
     nonisolated private func formattedNumber(_ value: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = 2
-        return formatter.string(from: NSNumber(value: value)) ?? String(value)
+        var formatted = String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), value)
+        while formatted.last == "0" {
+            formatted.removeLast()
+        }
+        if formatted.last == "." {
+            formatted.removeLast()
+        }
+        return formatted
     }
 
 }

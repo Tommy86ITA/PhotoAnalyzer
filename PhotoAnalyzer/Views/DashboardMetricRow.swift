@@ -12,6 +12,7 @@ struct DashboardMetricRow: View {
     let title: String
     let value: String
     let systemImage: String
+    var helpText: String?
     var isMonospaced = false
 
     var body: some View {
@@ -31,7 +32,9 @@ struct DashboardMetricRow: View {
                 .truncationMode(.middle)
                 .textSelection(.enabled)
                 .modifier(MonospacedIfNeeded(isEnabled: isMonospaced))
+                .help(helpText ?? value)
         }
+        .help(helpText ?? "\(title): \(value)")
     }
 }
 
