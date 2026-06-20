@@ -30,7 +30,7 @@ final class PhotosPickerItemAssetExporter {
         for (index, item) in items.enumerated() {
             try Task.checkCancellation()
 
-            let assetIdentifier = item.itemIdentifier ?? "picker-item-\(index + 1)"
+            let assetIdentifier = "picker-item-\(index + 1)"
 
             do {
                 guard let importedFile = try await item.loadTransferable(type: ImportedPhotosPickerFile.self) else {

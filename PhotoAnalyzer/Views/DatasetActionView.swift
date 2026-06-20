@@ -23,12 +23,10 @@ struct DatasetActionView: View {
 	let sourcePath: String?
 	let isSourcePlaceholder: Bool
 	let isFolderSource: Bool
-	let isPhotosSource: Bool
 	let canAnalyze: Bool
 	let isAnalyzing: Bool
 	let isCountingSupportedFiles: Bool
 	@Binding var includeSubfolders: Bool
-	@Binding var allowPhotosNetworkAccess: Bool
 	@Binding var selectedPhotoItems: [PhotosPickerItem]
 	let selectFolder: () -> Void
 	let selectOutputFolder: () -> Void
@@ -62,10 +60,6 @@ struct DatasetActionView: View {
 						Toggle("Include subfolders", isOn: $includeSubfolders)
 							.toggleStyle(.checkbox)
 							.disabled(!isFolderSource || isAnalyzing || isCountingSupportedFiles)
-
-						Toggle("Download iCloud originals", isOn: $allowPhotosNetworkAccess)
-							.toggleStyle(.checkbox)
-							.disabled(!isPhotosSource || isAnalyzing || isCountingSupportedFiles)
 					}
 					.frame(width: Layout.includeSubfoldersColumnWidth, alignment: .leading)
 
@@ -79,7 +73,7 @@ struct DatasetActionView: View {
 							selection: $selectedPhotoItems,
 							maxSelectionCount: nil,
 							matching: .images,
-							photoLibrary: .shared()
+							preferredItemEncoding: .current
 						) {
 							Label("Select Photos", systemImage: "photo.on.rectangle.angled")
 						}

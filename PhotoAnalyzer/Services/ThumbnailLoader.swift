@@ -87,19 +87,15 @@ final class ThumbnailLoader {
 			options[kCGImageSourceGenerateImageSpecificLumaScaling] = false
 		}
 
-		if let source = CGImageSourceCreateWithURL(url as CFURL, nil) {
-			if hasValidPixelSize(source) {
-				if let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
-					return ThumbnailLoadResult(
-						image: NSImage(cgImage: cgImage, size: CGSize(width: cgImage.width, height: cgImage.height)),
-						status: .cgImageSource,
-						error: "NSImage thumbnail unavailable; used CGImageSource fallback"
-					)
-				}
-			} else {
-				print("Thumbnail fallback skipped CGImageSource for invalid image size: \(url.lastPathComponent)")
+		if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+		   CGImageSourceGetCount(source) > 0,
+		   let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
+			return ThumbnailLoadResult(
+				image: NSImage(cgImage: cgImage, size: CGSize(width: cgImage.width, height: cgImage.height)),
+				status: .cgImageSource,
+				error: "NSImage thumbnail unavailable; used CGImageSource fallback"
+			)
 			}
-		}
 
 		return nil
 	}
@@ -114,36 +110,6 @@ final class ThumbnailLoader {
 			status: .nsImage,
 			error: nil
 		)
-	}
-
-	nonisolated private func hasValidPixelSize(_ source: CGImageSource) -> Bool {
-		guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else {
-			return false
-		}
-
-		let width = numericProperty(properties[kCGImagePropertyPixelWidth])
-		let height = numericProperty(properties[kCGImagePropertyPixelHeight])
-		return width > 0 && height > 0
-	}
-
-	nonisolated private func numericProperty(_ value: Any?) -> Double {
-		if let number = value as? NSNumber {
-			return number.doubleValue
-		}
-
-		if let value = value as? Double {
-			return value
-		}
-
-		if let value = value as? Int {
-			return Double(value)
-		}
-
-		if let value = value as? String {
-			return Double(value) ?? 0
-		}
-
-		return 0
 	}
 
 	/// Limits temporary AppKit/CoreGraphics allocations during large thumbnail batches.
