@@ -54,12 +54,27 @@ nonisolated struct PhotosAssetExportFailure: Equatable, Sendable {
     let reason: String
 }
 
+/// Export limits used to avoid accidental whole-library materialization without confirmation.
+nonisolated struct PhotosLibraryExportOptions: Equatable, Sendable {
+    let maximumAssetCount: Int?
+
+    init(maximumAssetCount: Int? = nil) {
+        self.maximumAssetCount = maximumAssetCount
+    }
+
+    static let unrestricted = PhotosLibraryExportOptions()
+}
+
+/// Progress emitted while Photos assets are exported into the temporary workspace.
+typealias PhotosMaterializationProgressHandler = @Sendable (ProgressSnapshot) -> Void
+
 /// Errors produced while preparing Photos Library assets for file-based analysis.
 nonisolated enum PhotosLibraryAssetExporterError: LocalizedError, Equatable {
     case photosUnavailable
     case unauthorized
     case unsupportedSelection
     case albumNotFound(String)
+    case assetLimitExceeded(count: Int, limit: Int)
     case noExportableAssets
 
     var errorDescription: String? {
@@ -72,6 +87,8 @@ nonisolated enum PhotosLibraryAssetExporterError: LocalizedError, Equatable {
             "This Photos Library selection is not supported yet."
         case .albumNotFound(let localIdentifier):
             "Photos album was not found: \(localIdentifier)"
+        case .assetLimitExceeded(let count, let limit):
+            "Photos selection contains \(count) assets, exceeding the configured limit of \(limit)."
         case .noExportableAssets:
             "No selected Photos assets could be exported for analysis."
         }
@@ -89,26 +106,59 @@ final class PhotosLibraryAssetExporter {
     }
 
     func export(selection: PhotosSelection) async throws -> PhotosMaterializationResult {
+        try await export(
+            selection: selection,
+            options: .unrestricted,
+            progressHandler: nil
+        )
+    }
+
+    func export(
+        selection: PhotosSelection,
+        options: PhotosLibraryExportOptions = .unrestricted,
+        progressHandler: PhotosMaterializationProgressHandler?
+    ) async throws -> PhotosMaterializationResult {
         #if canImport(Photos)
         try await requestReadAccessIfNeeded()
 
         let assets = try fetchAssets(for: selection.mode)
+        if let maximumAssetCount = options.maximumAssetCount,
+           assets.count > maximumAssetCount {
+            throw PhotosLibraryAssetExporterError.assetLimitExceeded(
+                count: assets.count,
+                limit: maximumAssetCount
+            )
+        }
 
         let workspace = try workspaceFactory()
         var exportedAssets: [MaterializedPhotosAsset] = []
         var skippedAssets: [PhotosAssetExportFailure] = []
         exportedAssets.reserveCapacity(assets.count)
 
-        for asset in assets {
+        emitProgress(
+            completedAssetCount: 0,
+            totalAssetCount: assets.count,
+            message: "Preparing Photos assets...",
+            progressHandler: progressHandler
+        )
+
+        for (index, asset) in assets.enumerated() {
             try Task.checkCancellation()
 
             let localIdentifier = asset.localIdentifier
+            let completedAssetCount = index + 1
 
             guard asset.mediaType == .image else {
                 skippedAssets.append(PhotosAssetExportFailure(
                     assetLocalIdentifier: localIdentifier,
                     reason: "Only image assets are supported."
                 ))
+                emitProgress(
+                    completedAssetCount: completedAssetCount,
+                    totalAssetCount: assets.count,
+                    message: "Preparing Photos assets...",
+                    progressHandler: progressHandler
+                )
                 continue
             }
 
@@ -117,6 +167,12 @@ final class PhotosLibraryAssetExporter {
                     assetLocalIdentifier: localIdentifier,
                     reason: "No exportable image resource was found."
                 ))
+                emitProgress(
+                    completedAssetCount: completedAssetCount,
+                    totalAssetCount: assets.count,
+                    message: "Preparing Photos assets...",
+                    progressHandler: progressHandler
+                )
                 continue
             }
 
@@ -126,7 +182,11 @@ final class PhotosLibraryAssetExporter {
             )
 
             do {
-                try await write(resource, to: destinationURL, allowsNetworkAccess: selection.allowsNetworkAccess)
+                try await write(
+                    resource,
+                    to: destinationURL,
+                    allowsNetworkAccess: selection.networkAccessPolicy.allowsNetworkAccess
+                )
                 exportedAssets.append(MaterializedPhotosAsset(
                     assetLocalIdentifier: localIdentifier,
                     originalFilename: resource.originalFilename,
@@ -140,6 +200,13 @@ final class PhotosLibraryAssetExporter {
                     reason: exportFailureReason(for: error)
                 ))
             }
+
+            emitProgress(
+                completedAssetCount: completedAssetCount,
+                totalAssetCount: assets.count,
+                message: "Preparing Photos assets...",
+                progressHandler: progressHandler
+            )
         }
 
         guard !exportedAssets.isEmpty else {
@@ -155,6 +222,23 @@ final class PhotosLibraryAssetExporter {
         #else
         throw PhotosLibraryAssetExporterError.photosUnavailable
         #endif
+    }
+}
+
+private extension PhotosLibraryAssetExporter {
+    func emitProgress(
+        completedAssetCount: Int,
+        totalAssetCount: Int,
+        message: String,
+        progressHandler: PhotosMaterializationProgressHandler?
+    ) {
+        progressHandler?(
+            ProgressSnapshot(
+                completedUnitCount: Int64(completedAssetCount),
+                totalUnitCount: Int64(max(1, totalAssetCount)),
+                message: message
+            )
+        )
     }
 }
 

@@ -41,11 +41,12 @@ enum AnalysisStatus {
 }
 
 /// Detailed operation phase shown in the status footer.
-enum AnalysisPhase: Sendable {
+enum AnalysisPhase: Equatable, Sendable {
     case ready
     case noFolderSelected
     case noOutputFolderSelected
     case noSupportedFiles
+    case preparingPhotos
     case scanningFiles
     case readingMetadata
     case generatingStatistics
@@ -67,6 +68,8 @@ enum AnalysisPhase: Sendable {
             return "Select an output folder first"
         case .noSupportedFiles:
             return "No supported files found"
+        case .preparingPhotos:
+            return "Preparing Photos assets..."
         case .scanningFiles:
             return "Scanning files..."
         case .readingMetadata:

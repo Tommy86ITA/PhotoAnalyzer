@@ -47,6 +47,7 @@ struct AnalysisSourceTests {
         #expect(selection.displayName == "Favorites")
         #expect(selection.representation == .current)
         #expect(selection.allowsNetworkAccess)
+        #expect(selection.networkAccessPolicy == .downloadMissingOriginals)
     }
 
     @Test func photosLibrarySelectionUsesLibraryDisplayName() {
@@ -55,6 +56,12 @@ struct AnalysisSourceTests {
         #expect(selection.displayName == "Photos Library")
         #expect(selection.representation == .original)
         #expect(selection.allowsNetworkAccess == false)
+        #expect(selection.networkAccessPolicy == .localOnly)
+    }
+
+    @Test func photosNetworkAccessPolicyMapsToPhotoKitNetworkFlag() {
+        #expect(PhotosNetworkAccessPolicy.localOnly.allowsNetworkAccess == false)
+        #expect(PhotosNetworkAccessPolicy.downloadMissingOriginals.allowsNetworkAccess)
     }
 
     @Test func materializedPhotosAssetDisplayInfoUsesStablePhotosURI() {

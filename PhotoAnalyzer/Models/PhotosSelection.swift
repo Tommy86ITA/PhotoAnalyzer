@@ -11,16 +11,32 @@ import Foundation
 nonisolated struct PhotosSelection: Equatable, Sendable {
     let mode: PhotosSelectionMode
     let representation: PhotosAssetRepresentation
-    let allowsNetworkAccess: Bool
+    let networkAccessPolicy: PhotosNetworkAccessPolicy
+
+    var allowsNetworkAccess: Bool {
+        networkAccessPolicy.allowsNetworkAccess
+    }
 
     init(
         mode: PhotosSelectionMode,
         representation: PhotosAssetRepresentation = .original,
-        allowsNetworkAccess: Bool = false
+        networkAccessPolicy: PhotosNetworkAccessPolicy = .localOnly
     ) {
         self.mode = mode
         self.representation = representation
-        self.allowsNetworkAccess = allowsNetworkAccess
+        self.networkAccessPolicy = networkAccessPolicy
+    }
+
+    init(
+        mode: PhotosSelectionMode,
+        representation: PhotosAssetRepresentation = .original,
+        allowsNetworkAccess: Bool
+    ) {
+        self.init(
+            mode: mode,
+            representation: representation,
+            networkAccessPolicy: allowsNetworkAccess ? .downloadMissingOriginals : .localOnly
+        )
     }
 
     var displayName: String {
@@ -49,4 +65,14 @@ nonisolated enum PhotosSelectionMode: Equatable, Sendable {
 nonisolated enum PhotosAssetRepresentation: String, Equatable, Sendable {
     case original
     case current
+}
+
+/// Whether Photos materialization may download missing iCloud originals.
+nonisolated enum PhotosNetworkAccessPolicy: String, Equatable, Sendable {
+    case localOnly
+    case downloadMissingOriginals
+
+    var allowsNetworkAccess: Bool {
+        self == .downloadMissingOriginals
+    }
 }

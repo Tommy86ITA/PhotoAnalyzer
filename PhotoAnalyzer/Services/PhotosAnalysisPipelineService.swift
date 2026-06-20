@@ -12,15 +12,18 @@ nonisolated struct PhotosAnalysisPipelineRequest: Sendable {
     let selection: PhotosSelection
     let outputFolderURL: URL?
     let datasetName: String
+    let exportOptions: PhotosLibraryExportOptions
 
     init(
         selection: PhotosSelection,
         outputFolderURL: URL?,
-        datasetName: String = "Photos Library"
+        datasetName: String = "Photos Library",
+        exportOptions: PhotosLibraryExportOptions = .unrestricted
     ) {
         self.selection = selection
         self.outputFolderURL = outputFolderURL
         self.datasetName = datasetName
+        self.exportOptions = exportOptions
     }
 }
 
@@ -49,14 +52,22 @@ nonisolated struct PhotosAnalysisPipelineResult: Sendable {
 /// Bridges Photos Library selections into the existing physical-file analysis pipeline.
 nonisolated struct PhotosAnalysisPipelineService: Sendable {
     typealias ProgressHandler = AnalysisPipelineService.ProgressHandler
-    typealias MaterializeSelection = @Sendable (PhotosSelection) async throws -> PhotosMaterializationResult
+    typealias MaterializeSelection = @Sendable (
+        PhotosSelection,
+        PhotosLibraryExportOptions,
+        PhotosMaterializationProgressHandler?
+    ) async throws -> PhotosMaterializationResult
 
     private let materializeSelection: MaterializeSelection
     private let pipelineService: AnalysisPipelineService
 
     init(
-        materializeSelection: @escaping MaterializeSelection = { selection in
-            try await PhotosLibraryAssetExporter().export(selection: selection)
+        materializeSelection: @escaping MaterializeSelection = { selection, options, progressHandler in
+            try await PhotosLibraryAssetExporter().export(
+                selection: selection,
+                options: options,
+                progressHandler: progressHandler
+            )
         },
         pipelineService: AnalysisPipelineService = AnalysisPipelineService()
     ) {
@@ -72,11 +83,23 @@ nonisolated struct PhotosAnalysisPipelineService: Sendable {
             AnalysisProgress(
                 fractionCompleted: 0,
                 message: "Preparing Photos assets...",
-                phase: .scanningFiles
+                phase: .preparingPhotos
             )
         )
 
-        let materializationResult = try await materializeSelection(request.selection)
+        let preparationMapper = PipelineProgressMapper(
+            startingUnitCount: 0,
+            totalUnitCount: 10,
+            allocatedUnitCount: 1,
+            phase: .preparingPhotos
+        )
+        let materializationResult = try await materializeSelection(
+            request.selection,
+            request.exportOptions,
+            { snapshot in
+                progressHandler?(preparationMapper.map(snapshot))
+            }
+        )
         defer {
             materializationResult.workspace.cleanup()
         }
