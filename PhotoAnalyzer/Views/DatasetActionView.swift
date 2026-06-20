@@ -24,11 +24,11 @@ struct DatasetActionView: View {
 	let canAnalyze: Bool
 	let isAnalyzing: Bool
 	let isCountingSupportedFiles: Bool
-	@Binding var includeSubfolders: Bool
-	@Binding var useCurrentPhotosEncoding: Bool
+	let useCurrentPhotosEncoding: Bool
 	@Binding var selectedPhotoItems: [PhotosPickerItem]
 	let selectFolder: () -> Void
 	let selectOutputFolder: () -> Void
+	let openSettings: () -> Void
 	let analyze: () -> Void
 	let cancelAnalysis: () -> Void
 
@@ -76,7 +76,9 @@ struct DatasetActionView: View {
 						}
 						.disabled(isAnalyzing)
 
-						settingsMenu
+						Button(action: openSettings) {
+							Label("Settings", systemImage: "gearshape")
+						}
 					}
 					.frame(width: Layout.secondaryActionsColumnWidth, alignment: .trailing)
 
@@ -137,19 +139,6 @@ struct DatasetActionView: View {
 		}
 		.font(.footnote)
 		.foregroundStyle(.secondary)
-	}
-
-	private var settingsMenu: some View {
-		Menu {
-			Toggle("Include folder subfolders", isOn: $includeSubfolders)
-				.disabled(isAnalyzing || isCountingSupportedFiles)
-
-			Toggle("Use current Photos encoding", isOn: $useCurrentPhotosEncoding)
-				.disabled(isAnalyzing || isCountingSupportedFiles)
-		} label: {
-			Label("Settings", systemImage: "gearshape")
-		}
-		.disabled(isAnalyzing || isCountingSupportedFiles)
 	}
 
 	@ViewBuilder

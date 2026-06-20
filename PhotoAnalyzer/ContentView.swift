@@ -71,6 +71,9 @@ struct ContentView: View {
     /// The current progress for the complete analysis pipeline.
     @State private var analysisProgress: AnalysisProgress?
 
+    /// Whether the dedicated settings sheet is visible.
+    @State private var isShowingSettings = false
+
     /// The view hierarchy for the PhotoAnalyzer interface.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -87,11 +90,11 @@ struct ContentView: View {
                     canAnalyze: canAnalyzeSelectedSource,
                     isAnalyzing: isAnalyzing,
                     isCountingSupportedFiles: isCountingSupportedFiles,
-                    includeSubfolders: $includeSubfolders,
-                    useCurrentPhotosEncoding: $useCurrentPhotosEncoding,
+                    useCurrentPhotosEncoding: useCurrentPhotosEncoding,
                     selectedPhotoItems: $selectedPhotoItems,
                     selectFolder: selectFolder,
                     selectOutputFolder: selectOutputFolder,
+                    openSettings: openSettings,
                     analyze: analyzeSelectedSource,
                     cancelAnalysis: cancelAnalysis
                 )
@@ -149,6 +152,14 @@ struct ContentView: View {
         }
         .onChange(of: selectedPhotoItems) { _, newItems in
             selectPhotos(from: newItems)
+        }
+        .sheet(isPresented: $isShowingSettings) {
+            SettingsView(
+                includeSubfolders: $includeSubfolders,
+                useCurrentPhotosEncoding: $useCurrentPhotosEncoding,
+                canEditSettings: !isAnalyzing && !isCountingSupportedFiles,
+                dismiss: { isShowingSettings = false }
+            )
         }
     }
 
@@ -336,6 +347,11 @@ struct ContentView: View {
     /// Cancels the currently running analysis, if any.
     private func cancelAnalysis() {
         analysisTask?.cancel()
+    }
+
+    /// Opens the persisted settings screen.
+    private func openSettings() {
+        isShowingSettings = true
     }
 
     /// Runs folder analysis and package export for the selected folder.
