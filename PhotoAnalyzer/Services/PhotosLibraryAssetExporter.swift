@@ -59,6 +59,7 @@ nonisolated enum PhotosLibraryAssetExporterError: LocalizedError, Equatable {
     case photosUnavailable
     case unauthorized
     case unsupportedSelection
+    case albumNotFound(String)
     case noExportableAssets
 
     var errorDescription: String? {
@@ -69,6 +70,8 @@ nonisolated enum PhotosLibraryAssetExporterError: LocalizedError, Equatable {
             "PhotoAnalyzer is not authorized to access the Photos Library."
         case .unsupportedSelection:
             "This Photos Library selection is not supported yet."
+        case .albumNotFound(let localIdentifier):
+            "Photos album was not found: \(localIdentifier)"
         case .noExportableAssets:
             "No selected Photos assets could be exported for analysis."
         }
@@ -89,27 +92,17 @@ final class PhotosLibraryAssetExporter {
         #if canImport(Photos)
         try await requestReadAccessIfNeeded()
 
-        guard case .assets(let localIdentifiers) = selection.mode else {
-            throw PhotosLibraryAssetExporterError.unsupportedSelection
-        }
+        let assets = try fetchAssets(for: selection.mode)
 
         let workspace = try workspaceFactory()
         var exportedAssets: [MaterializedPhotosAsset] = []
         var skippedAssets: [PhotosAssetExportFailure] = []
-        exportedAssets.reserveCapacity(localIdentifiers.count)
+        exportedAssets.reserveCapacity(assets.count)
 
-        let assetsByIdentifier = fetchAssets(with: localIdentifiers)
-
-        for localIdentifier in localIdentifiers {
+        for asset in assets {
             try Task.checkCancellation()
 
-            guard let asset = assetsByIdentifier[localIdentifier] else {
-                skippedAssets.append(PhotosAssetExportFailure(
-                    assetLocalIdentifier: localIdentifier,
-                    reason: "Asset was not found in the Photos Library."
-                ))
-                continue
-            }
+            let localIdentifier = asset.localIdentifier
 
             guard asset.mediaType == .image else {
                 skippedAssets.append(PhotosAssetExportFailure(
@@ -185,7 +178,18 @@ private extension PhotosLibraryAssetExporter {
         }
     }
 
-    func fetchAssets(with localIdentifiers: [String]) -> [String: PHAsset] {
+    func fetchAssets(for mode: PhotosSelectionMode) throws -> [PHAsset] {
+        switch mode {
+        case .assets(let localIdentifiers):
+            return fetchAssets(with: localIdentifiers)
+        case .album(let localIdentifier, _):
+            return try fetchAlbumAssets(localIdentifier: localIdentifier)
+        case .library:
+            return fetchLibraryAssets()
+        }
+    }
+
+    func imageFetchOptions() -> PHFetchOptions {
         let options = PHFetchOptions()
         options.includeHiddenAssets = false
         options.includeAssetSourceTypes = [.typeUserLibrary, .typeCloudShared]
@@ -193,7 +197,17 @@ private extension PhotosLibraryAssetExporter {
             format: "mediaType == %d",
             PHAssetMediaType.image.rawValue
         )
-        let result = PHAsset.fetchAssets(withLocalIdentifiers: localIdentifiers, options: options)
+        options.sortDescriptors = [
+            NSSortDescriptor(key: "creationDate", ascending: true)
+        ]
+        return options
+    }
+
+    func fetchAssets(with localIdentifiers: [String]) -> [PHAsset] {
+        let result = PHAsset.fetchAssets(
+            withLocalIdentifiers: localIdentifiers,
+            options: imageFetchOptions()
+        )
         var assetsByIdentifier: [String: PHAsset] = [:]
         assetsByIdentifier.reserveCapacity(result.count)
 
@@ -201,7 +215,33 @@ private extension PhotosLibraryAssetExporter {
             assetsByIdentifier[asset.localIdentifier] = asset
         }
 
-        return assetsByIdentifier
+        return localIdentifiers.compactMap { assetsByIdentifier[$0] }
+    }
+
+    func fetchAlbumAssets(localIdentifier: String) throws -> [PHAsset] {
+        let result = PHAssetCollection.fetchAssetCollections(
+            withLocalIdentifiers: [localIdentifier],
+            options: nil
+        )
+
+        guard let collection = result.firstObject else {
+            throw PhotosLibraryAssetExporterError.albumNotFound(localIdentifier)
+        }
+
+        return assets(from: PHAsset.fetchAssets(in: collection, options: imageFetchOptions()))
+    }
+
+    func fetchLibraryAssets() -> [PHAsset] {
+        assets(from: PHAsset.fetchAssets(with: imageFetchOptions()))
+    }
+
+    func assets(from result: PHFetchResult<PHAsset>) -> [PHAsset] {
+        var assets: [PHAsset] = []
+        assets.reserveCapacity(result.count)
+        result.enumerateObjects { asset, _, _ in
+            assets.append(asset)
+        }
+        return assets
     }
 
     func resource(

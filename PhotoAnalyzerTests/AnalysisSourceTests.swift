@@ -49,6 +49,14 @@ struct AnalysisSourceTests {
         #expect(selection.allowsNetworkAccess)
     }
 
+    @Test func photosLibrarySelectionUsesLibraryDisplayName() {
+        let selection = PhotosSelection(mode: .library)
+
+        #expect(selection.displayName == "Photos Library")
+        #expect(selection.representation == .original)
+        #expect(selection.allowsNetworkAccess == false)
+    }
+
     @Test func materializedPhotosAssetDisplayInfoUsesStablePhotosURI() {
         let asset = MaterializedPhotosAsset(
             assetLocalIdentifier: "ABCD/L0/001",

@@ -32,6 +32,8 @@ nonisolated struct PhotosSelection: Equatable, Sendable {
             return "\(localIdentifiers.count) Photos assets"
         case .album(_, let name):
             return name ?? "Photos album"
+        case .library:
+            return "Photos Library"
         }
     }
 }
@@ -40,6 +42,7 @@ nonisolated struct PhotosSelection: Equatable, Sendable {
 nonisolated enum PhotosSelectionMode: Equatable, Sendable {
     case assets(localIdentifiers: [String])
     case album(localIdentifier: String, name: String?)
+    case library
 }
 
 /// Which Photos representation should be exported before file-based analysis.

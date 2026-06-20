@@ -11,10 +11,10 @@ import Foundation
 final class TemporaryAssetWorkspace: @unchecked Sendable {
     let directoryURL: URL
 
-    private var reservedFileNames: Set<String> = []
-    private let fileManager: FileManager
+    nonisolated(unsafe) private var reservedFileNames: Set<String> = []
+    nonisolated(unsafe) private let fileManager: FileManager
 
-    init(
+    nonisolated init(
         rootDirectoryURL: URL = FileManager.default.temporaryDirectory,
         fileManager: FileManager = .default
     ) throws {
@@ -31,7 +31,7 @@ final class TemporaryAssetWorkspace: @unchecked Sendable {
         )
     }
 
-    func fileURL(preferredFilename: String?, fallbackBasename: String) -> URL {
+    nonisolated func fileURL(preferredFilename: String?, fallbackBasename: String) -> URL {
         let fallbackFilename = fallbackBasename.isEmpty ? "asset" : fallbackBasename
         let sanitizedFilename = sanitizeFilename(preferredFilename ?? fallbackFilename)
         let filename = sanitizedFilename.isEmpty ? "\(fallbackFilename).dat" : sanitizedFilename
@@ -39,11 +39,11 @@ final class TemporaryAssetWorkspace: @unchecked Sendable {
         return directoryURL.appendingPathComponent(uniqueFilename, isDirectory: false)
     }
 
-    func cleanup() {
+    nonisolated func cleanup() {
         try? fileManager.removeItem(at: directoryURL)
     }
 
-    private func reserveUniqueFilename(_ filename: String) -> String {
+    nonisolated private func reserveUniqueFilename(_ filename: String) -> String {
         let url = URL(fileURLWithPath: filename)
         let basename = url.deletingPathExtension().lastPathComponent
         let pathExtension = url.pathExtension
@@ -62,7 +62,7 @@ final class TemporaryAssetWorkspace: @unchecked Sendable {
         return candidate
     }
 
-    private func sanitizeFilename(_ filename: String) -> String {
+    nonisolated private func sanitizeFilename(_ filename: String) -> String {
         let invalidCharacters = CharacterSet(charactersIn: "/:\\?%*|\"<>")
             .union(.newlines)
             .union(.controlCharacters)
