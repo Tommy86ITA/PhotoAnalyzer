@@ -11,8 +11,8 @@ import PhotosUI
 /// Top action area for choosing a dataset and generating an AI package.
 struct DatasetActionView: View {
 	private enum Layout {
-		static let secondaryActionsColumnWidth: CGFloat = 150
-		static let actionColumnWidth: CGFloat = 280
+		static let actionColumnWidth: CGFloat = 310
+		static let secondaryButtonSize: CGFloat = 32
 	}
 
 	let datasetState: DatasetUIState
@@ -34,9 +34,9 @@ struct DatasetActionView: View {
 
 	var body: some View {
 		GroupBox("Dataset") {
-			VStack(alignment: .leading, spacing: 12) {
-				HStack(alignment: .center, spacing: 18) {
-					VStack(alignment: .leading, spacing: 10) {
+			VStack(alignment: .leading, spacing: 10) {
+				HStack(alignment: .top, spacing: 18) {
+					VStack(alignment: .leading, spacing: 8) {
 						pathRow(
 							iconName: sourceIconName,
 							title: "Source",
@@ -55,35 +55,13 @@ struct DatasetActionView: View {
 					}
 					.frame(maxWidth: .infinity, alignment: .leading)
 
-					VStack(alignment: .trailing, spacing: 8) {
-						Button(action: selectFolder) {
-							Label("Select Folder", systemImage: "folder.badge.plus")
-						}
-						.disabled(isAnalyzing || isCountingSupportedFiles)
+					VStack(alignment: .trailing, spacing: 10) {
+						analysisButton
+							.frame(width: Layout.actionColumnWidth)
 
-						PhotosPicker(
-							selection: $selectedPhotoItems,
-							maxSelectionCount: nil,
-							matching: .images,
-							preferredItemEncoding: useCurrentPhotosEncoding ? .current : .automatic
-						) {
-							Label("Select Photos", systemImage: "photo.on.rectangle.angled")
-						}
-						.disabled(isAnalyzing || isCountingSupportedFiles)
-
-						Button(action: selectOutputFolder) {
-							Label("Select Output", systemImage: "tray.and.arrow.down")
-						}
-						.disabled(isAnalyzing)
-
-						Button(action: openSettings) {
-							Label("Settings", systemImage: "gearshape")
-						}
+						secondaryActions
 					}
-					.frame(width: Layout.secondaryActionsColumnWidth, alignment: .trailing)
-
-					analysisButton
-						.frame(width: Layout.actionColumnWidth)
+					.frame(width: Layout.actionColumnWidth, alignment: .trailing)
 				}
 
 				Divider()
@@ -92,6 +70,58 @@ struct DatasetActionView: View {
 			}
 			.padding(.vertical, 2)
 		}
+	}
+
+	private var secondaryActions: some View {
+		HStack(spacing: 6) {
+			compactButton(
+				title: "Select Folder",
+				systemImage: "folder.badge.plus",
+				action: selectFolder
+			)
+			.disabled(isAnalyzing || isCountingSupportedFiles)
+
+			PhotosPicker(
+				selection: $selectedPhotoItems,
+				maxSelectionCount: nil,
+				matching: .images,
+				preferredItemEncoding: useCurrentPhotosEncoding ? .current : .automatic
+			) {
+				Label("Select Photos", systemImage: "photo.on.rectangle.angled")
+					.labelStyle(.iconOnly)
+					.frame(width: Layout.secondaryButtonSize, height: Layout.secondaryButtonSize)
+			}
+			.buttonStyle(.bordered)
+			.disabled(isAnalyzing || isCountingSupportedFiles)
+			.help("Select Photos")
+
+			compactButton(
+				title: "Select Output",
+				systemImage: "tray.and.arrow.down",
+				action: selectOutputFolder
+			)
+			.disabled(isAnalyzing)
+
+			compactButton(
+				title: "Settings",
+				systemImage: "gearshape",
+				action: openSettings
+			)
+		}
+	}
+
+	private func compactButton(
+		title: String,
+		systemImage: String,
+		action: @escaping () -> Void
+	) -> some View {
+		Button(action: action) {
+			Label(title, systemImage: systemImage)
+				.labelStyle(.iconOnly)
+				.frame(width: Layout.secondaryButtonSize, height: Layout.secondaryButtonSize)
+		}
+		.buttonStyle(.bordered)
+		.help(title)
 	}
 
 	private var outputFolderText: String {
@@ -129,16 +159,46 @@ struct DatasetActionView: View {
 	}
 
 	private var metricsRow: some View {
-		HStack(alignment: .center, spacing: 14) {
-			Label("Supported: \(datasetState.supportedFilesText)", systemImage: "photo.stack")
-				.help("Supported image files found in the selected dataset.")
-			Label("Analyzed: \(datasetState.analyzedPhotosText)", systemImage: "checkmark.circle")
-				.help("Photos successfully processed during the current analysis.")
-			Label(datasetState.analysisStatus.displayText, systemImage: "waveform.path.ecg")
-				.help("Current dataset analysis status.")
+		HStack(alignment: .center, spacing: 16) {
+			metricBadge(
+				title: "Supported",
+				value: datasetState.supportedFilesText,
+				systemImage: "photo.stack",
+				helpText: "Supported image files found in the selected dataset."
+			)
+			metricBadge(
+				title: "Analyzed",
+				value: datasetState.analyzedPhotosText,
+				systemImage: "checkmark.circle",
+				helpText: "Photos successfully processed during the current analysis."
+			)
+			metricBadge(
+				title: "Status",
+				value: datasetState.analysisStatus.displayText,
+				systemImage: "waveform.path.ecg",
+				helpText: "Current dataset analysis status."
+			)
 		}
 		.font(.footnote)
 		.foregroundStyle(.secondary)
+	}
+
+	private func metricBadge(
+		title: String,
+		value: String,
+		systemImage: String,
+		helpText: String
+	) -> some View {
+		Label {
+			HStack(spacing: 4) {
+				Text(title)
+				Text(value)
+					.foregroundStyle(.primary)
+			}
+		} icon: {
+			Image(systemName: systemImage)
+		}
+		.help(helpText)
 	}
 
 	@ViewBuilder
