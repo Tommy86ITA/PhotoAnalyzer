@@ -11,8 +11,8 @@ import PhotosUI
 /// Top action area for choosing a dataset and generating an AI package.
 struct DatasetActionView: View {
 	private enum Layout {
-		static let actionColumnWidth: CGFloat = 310
-		static let secondaryButtonSize: CGFloat = 32
+		static let actionColumnWidth: CGFloat = 296
+		static let secondaryButtonSize: CGFloat = 44
 	}
 
 	let datasetState: DatasetUIState
@@ -56,10 +56,10 @@ struct DatasetActionView: View {
 					.frame(maxWidth: .infinity, alignment: .leading)
 
 					VStack(alignment: .trailing, spacing: 10) {
+						secondaryActions
+
 						analysisButton
 							.frame(width: Layout.actionColumnWidth)
-
-						secondaryActions
 					}
 					.frame(width: Layout.actionColumnWidth, alignment: .trailing)
 				}
