@@ -11,7 +11,6 @@ import PhotosUI
 /// Top action area for choosing a dataset and generating an AI package.
 struct DatasetActionView: View {
 	private enum Layout {
-		static let includeSubfoldersColumnWidth: CGFloat = 170
 		static let secondaryActionsColumnWidth: CGFloat = 150
 		static let actionColumnWidth: CGFloat = 280
 	}
@@ -22,11 +21,11 @@ struct DatasetActionView: View {
 	let sourceText: String
 	let sourcePath: String?
 	let isSourcePlaceholder: Bool
-	let isFolderSource: Bool
 	let canAnalyze: Bool
 	let isAnalyzing: Bool
 	let isCountingSupportedFiles: Bool
 	@Binding var includeSubfolders: Bool
+	@Binding var useCurrentPhotosEncoding: Bool
 	@Binding var selectedPhotoItems: [PhotosPickerItem]
 	let selectFolder: () -> Void
 	let selectOutputFolder: () -> Void
@@ -56,13 +55,6 @@ struct DatasetActionView: View {
 					}
 					.frame(maxWidth: .infinity, alignment: .leading)
 
-					VStack(alignment: .leading, spacing: 10) {
-						Toggle("Include subfolders", isOn: $includeSubfolders)
-							.toggleStyle(.checkbox)
-							.disabled(!isFolderSource || isAnalyzing || isCountingSupportedFiles)
-					}
-					.frame(width: Layout.includeSubfoldersColumnWidth, alignment: .leading)
-
 					VStack(alignment: .trailing, spacing: 8) {
 						Button(action: selectFolder) {
 							Label("Select Folder", systemImage: "folder.badge.plus")
@@ -73,7 +65,7 @@ struct DatasetActionView: View {
 							selection: $selectedPhotoItems,
 							maxSelectionCount: nil,
 							matching: .images,
-							preferredItemEncoding: .current
+							preferredItemEncoding: useCurrentPhotosEncoding ? .current : .automatic
 						) {
 							Label("Select Photos", systemImage: "photo.on.rectangle.angled")
 						}
@@ -83,6 +75,8 @@ struct DatasetActionView: View {
 							Label("Select Output", systemImage: "tray.and.arrow.down")
 						}
 						.disabled(isAnalyzing)
+
+						settingsMenu
 					}
 					.frame(width: Layout.secondaryActionsColumnWidth, alignment: .trailing)
 
@@ -143,6 +137,19 @@ struct DatasetActionView: View {
 		}
 		.font(.footnote)
 		.foregroundStyle(.secondary)
+	}
+
+	private var settingsMenu: some View {
+		Menu {
+			Toggle("Include folder subfolders", isOn: $includeSubfolders)
+				.disabled(isAnalyzing || isCountingSupportedFiles)
+
+			Toggle("Use current Photos encoding", isOn: $useCurrentPhotosEncoding)
+				.disabled(isAnalyzing || isCountingSupportedFiles)
+		} label: {
+			Label("Settings", systemImage: "gearshape")
+		}
+		.disabled(isAnalyzing || isCountingSupportedFiles)
 	}
 
 	@ViewBuilder

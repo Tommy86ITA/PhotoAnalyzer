@@ -33,7 +33,10 @@ struct ContentView: View {
     @State private var selectedOutputFolderURL: URL?
 
     /// Whether selected dataset subfolders should be scanned.
-    @State private var includeSubfolders = false
+    @AppStorage("analysis.includeSubfolders") private var includeSubfolders = false
+
+    /// Whether the Photos picker should prefer the current asset encoding instead of automatic transcoding.
+    @AppStorage("photos.useCurrentEncoding") private var useCurrentPhotosEncoding = true
 
     /// User-facing state for the selected dataset.
     @State private var datasetState = DatasetUIState.initial
@@ -81,11 +84,11 @@ struct ContentView: View {
                     sourceText: sourceText,
                     sourcePath: sourcePath,
                     isSourcePlaceholder: selectedAnalysisSource == nil,
-                    isFolderSource: isFolderSource,
                     canAnalyze: canAnalyzeSelectedSource,
                     isAnalyzing: isAnalyzing,
                     isCountingSupportedFiles: isCountingSupportedFiles,
                     includeSubfolders: $includeSubfolders,
+                    useCurrentPhotosEncoding: $useCurrentPhotosEncoding,
                     selectedPhotoItems: $selectedPhotoItems,
                     selectFolder: selectFolder,
                     selectOutputFolder: selectOutputFolder,
@@ -169,13 +172,6 @@ struct ContentView: View {
             return nil
         }
         return source.folderURL.path
-    }
-
-    private var isFolderSource: Bool {
-        if case .folder = selectedAnalysisSource {
-            return true
-        }
-        return false
     }
 
     private var canAnalyzeSelectedSource: Bool {
