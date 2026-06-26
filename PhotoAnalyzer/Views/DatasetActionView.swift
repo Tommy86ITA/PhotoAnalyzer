@@ -284,6 +284,7 @@ struct DatasetActionView: View {
 		if isAnalyzing {
 			Button(role: .cancel, action: cancelAnalysis) {
 				Label("Cancel Analysis", systemImage: "xmark.circle")
+					.frame(maxWidth: .infinity)
 			}
 			.buttonStyle(.borderedProminent)
 			.tint(.red)
@@ -291,6 +292,7 @@ struct DatasetActionView: View {
 		} else {
 			Button(action: analyze) {
 				Label("Analyze & Generate AI Package", systemImage: "shippingbox")
+					.frame(maxWidth: .infinity)
 			}
 			.buttonStyle(.borderedProminent)
 			.disabled(!canAnalyze || isCountingSupportedFiles)
