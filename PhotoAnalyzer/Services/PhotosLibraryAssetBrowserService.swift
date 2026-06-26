@@ -59,22 +59,18 @@ nonisolated struct PhotosLibraryAssetBrowserService: Sendable {
             return nil
         }
 
-        return await withCheckedContinuation { continuation in
-            let options = PHImageRequestOptions()
-            options.deliveryMode = .opportunistic
-            options.resizeMode = .fast
-            options.isNetworkAccessAllowed = false
-            options.isSynchronous = false
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .opportunistic
+        options.resizeMode = .fast
+        options.isNetworkAccessAllowed = false
+        options.isSynchronous = false
 
-            PHCachingImageManager.default().requestImage(
-                for: asset,
-                targetSize: targetSize,
-                contentMode: .aspectFill,
-                options: options
-            ) { image, _ in
-                continuation.resume(returning: image)
-            }
-        }
+        return await PHCachingImageManager.default().requestFinalImage(
+            for: asset,
+            targetSize: targetSize,
+            contentMode: .aspectFill,
+            options: options
+        )
         #else
         return nil
         #endif
@@ -98,4 +94,53 @@ private extension PhotosLibraryAssetBrowserService {
         return options
     }
 }
+
+#if canImport(AppKit)
+private extension PHImageManager {
+    func requestFinalImage(
+        for asset: PHAsset,
+        targetSize: CGSize,
+        contentMode: PHImageContentMode,
+        options: PHImageRequestOptions?
+    ) async -> NSImage? {
+        await withCheckedContinuation { continuation in
+            let didResume = LockedFlag()
+
+            requestImage(
+                for: asset,
+                targetSize: targetSize,
+                contentMode: contentMode,
+                options: options
+            ) { image, info in
+                if let isDegraded = info?[PHImageResultIsDegradedKey] as? Bool, isDegraded {
+                    return
+                }
+
+                if didResume.setIfUnset() {
+                    continuation.resume(returning: image)
+                }
+            }
+        }
+    }
+}
+
+private final class LockedFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isSet = false
+
+    func setIfUnset() -> Bool {
+        lock.lock()
+        defer {
+            lock.unlock()
+        }
+
+        guard !isSet else {
+            return false
+        }
+
+        isSet = true
+        return true
+    }
+}
+#endif
 #endif
