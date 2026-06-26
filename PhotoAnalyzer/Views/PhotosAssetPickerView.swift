@@ -13,7 +13,7 @@ import AppKit
 
 private enum PhotosAssetPickerLayout {
     static let thumbnailSide: CGFloat = 92
-    static let thumbnailPixelSide: CGFloat = 184
+    static let thumbnailPixelSide: CGFloat = 276
     static let gridSpacing: CGFloat = 8
 }
 

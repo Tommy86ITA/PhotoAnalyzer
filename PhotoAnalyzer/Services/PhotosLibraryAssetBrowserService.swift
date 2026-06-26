@@ -59,7 +59,7 @@ nonisolated struct PhotosLibraryAssetBrowserService: Sendable {
         }
 
         let options = PHImageRequestOptions()
-        options.deliveryMode = .fastFormat
+        options.deliveryMode = .highQualityFormat
         options.resizeMode = .exact
         options.isNetworkAccessAllowed = false
         options.isSynchronous = false
