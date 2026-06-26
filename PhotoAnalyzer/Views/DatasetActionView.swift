@@ -106,6 +106,7 @@ struct DatasetActionView: View {
 				.disabled(isAnalyzing || isCountingSupportedFiles)
 				.controlSize(.small)
 				.padding(.leading, Layout.infoValueLeadingPadding)
+				.help("Include images inside nested folders")
 		} else {
 			infoRow(
 				iconName: "photo.on.rectangle.angled",
@@ -237,6 +238,7 @@ struct DatasetActionView: View {
 		}
 		.buttonStyle(.plain)
 		.contentShape(Rectangle())
+		.help(title)
 	}
 
 	private func compactButton(
@@ -340,6 +342,7 @@ struct DatasetActionView: View {
 			.buttonStyle(.borderedProminent)
 			.tint(.red)
 			.frame(maxWidth: .infinity)
+			.help("Cancel the current analysis")
 		} else {
 			Button(action: analyze) {
 				Label("Analyze & Generate AI Package", systemImage: "shippingbox")
@@ -348,6 +351,7 @@ struct DatasetActionView: View {
 			.buttonStyle(.borderedProminent)
 			.disabled(!canAnalyze || isCountingSupportedFiles)
 			.frame(maxWidth: .infinity)
+			.help(canAnalyze ? "Analyze the selected source and generate the AI package" : "Select a valid source before generating the AI package")
 		}
 	}
 }

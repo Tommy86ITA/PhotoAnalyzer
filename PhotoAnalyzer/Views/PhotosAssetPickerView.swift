@@ -59,11 +59,13 @@ struct PhotosAssetPickerView: View {
                 thumbnailSizeControl
 
                 Button("Cancel", action: dismiss)
+                    .help("Close without changing the Photos selection")
 
                 Button("Use Selected", action: confirmSelection)
                     .buttonStyle(.borderedProminent)
                     .disabled(selectedAssetIdentifiers.isEmpty)
                     .keyboardShortcut(.defaultAction)
+                    .help(selectedAssetIdentifiers.isEmpty ? "Select one or more photos first" : "Use the selected photos as the source")
             }
 
             Divider()
@@ -104,6 +106,7 @@ struct PhotosAssetPickerView: View {
                     .foregroundStyle(.secondary)
 
                 Button("Try Again", action: refresh)
+                    .help("Reload Photos")
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         } else if assets.isEmpty {
@@ -175,6 +178,7 @@ private struct PhotosAssetThumbnailCell: View {
             }
         }
         .buttonStyle(.plain)
+        .help("Click to select. Command-click toggles one photo. Shift-click selects a range.")
         .task(id: "\(asset.localIdentifier)-\(Int(thumbnailPixelSide))") {
             thumbnail = await PhotosLibraryAssetBrowserService().thumbnail(
                 for: asset.localIdentifier,

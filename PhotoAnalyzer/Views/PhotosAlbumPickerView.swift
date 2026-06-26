@@ -27,6 +27,7 @@ struct PhotosAlbumPickerView: View {
                 Button("Done", action: dismiss)
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
+                    .help("Close Album Picker")
             }
 
             Divider()
@@ -49,6 +50,7 @@ struct PhotosAlbumPickerView: View {
                     .foregroundStyle(.secondary)
 
                 Button("Try Again", action: refresh)
+                    .help("Reload Photos albums")
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         } else if albums.isEmpty {
@@ -79,6 +81,7 @@ struct PhotosAlbumPickerView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .help("Use \(album.title) as the Photos source")
             }
             .listStyle(.inset)
         }
