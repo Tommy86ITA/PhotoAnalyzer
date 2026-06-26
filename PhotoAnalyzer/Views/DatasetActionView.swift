@@ -45,6 +45,8 @@ struct DatasetActionView: View {
 	@Binding var includeSubfolders: Bool
 	@Binding var selectedPhotoItems: [PhotosPickerItem]
 	let selectFolder: () -> Void
+	let choosePhotosAlbum: () -> Void
+	let useEntirePhotosLibrary: () -> Void
 	let openSettings: () -> Void
 	let analyze: () -> Void
 	let cancelAnalysis: () -> Void
@@ -163,21 +165,34 @@ struct DatasetActionView: View {
 			)
 			.disabled(isAnalyzing || isCountingSupportedFiles)
 
-			PhotosPicker(
-				selection: $selectedPhotoItems,
-				maxSelectionCount: nil,
-				selectionBehavior: .ordered,
-				matching: .images,
-				preferredItemEncoding: useUnmodifiedPhotosOriginals ? .current : .automatic
-			) {
+			Menu {
+				PhotosPicker(
+					selection: $selectedPhotoItems,
+					maxSelectionCount: nil,
+					selectionBehavior: .ordered,
+					matching: .images,
+					preferredItemEncoding: useUnmodifiedPhotosOriginals ? .current : .automatic
+				) {
+					Label("Select Photos...", systemImage: "photo.on.rectangle.angled")
+				}
+
+				Button(action: choosePhotosAlbum) {
+					Label("Choose Album...", systemImage: "photo.stack")
+				}
+
+				Button(action: useEntirePhotosLibrary) {
+					Label("Use Entire Library", systemImage: "photo.on.rectangle")
+				}
+			} label: {
 				Label("Select Photos", systemImage: "photo.on.rectangle.angled")
 					.labelStyle(.iconOnly)
 					.frame(maxWidth: .infinity, minHeight: Layout.secondaryButtonHeight)
 			}
+			.menuStyle(.button)
 			.buttonStyle(.bordered)
 			.frame(width: Layout.secondaryButtonWidth)
 			.disabled(isAnalyzing || isCountingSupportedFiles)
-			.help("Select Photos")
+			.help("Choose Photos source")
 
 			compactButton(
 				title: "Settings",
