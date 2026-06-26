@@ -11,7 +11,7 @@ import PhotosUI
 /// Top action area for choosing a dataset and generating an AI package.
 struct DatasetActionView: View {
 	private enum Layout {
-		static let actionColumnWidth: CGFloat = 224
+		static let actionColumnWidth: CGFloat = 284
 		static let secondaryButtonSize: CGFloat = 44
 		static let infoIconWidth: CGFloat = 18
 		static let infoColumnSpacing: CGFloat = 10
