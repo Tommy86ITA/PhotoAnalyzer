@@ -222,6 +222,8 @@ struct ContentView: View {
                 error: photosAssetLoadingError,
                 selectedAssetIdentifiers: selectedPhotoAssetIdentifiers,
                 toggleAsset: toggleSelectedPhotoAsset,
+                selectAllAssets: selectAllPhotoAssets,
+                clearSelection: clearSelectedPhotoAssets,
                 confirmSelection: confirmSelectedPhotosAssets,
                 refresh: loadPhotosAssets,
                 dismiss: { isShowingPhotosAssetPicker = false }
@@ -420,6 +422,18 @@ struct ContentView: View {
         } else {
             selectedPhotoAssetIdentifiers = rangeIdentifiers
         }
+    }
+
+    /// Selects every loaded PhotoKit asset in the manual Photos selection sheet.
+    private func selectAllPhotoAssets() {
+        selectedPhotoAssetIdentifiers = Set(photosAssets.map(\.localIdentifier))
+        lastSelectedPhotoAssetIdentifier = photosAssets.last?.localIdentifier
+    }
+
+    /// Clears the manual PhotoKit asset selection.
+    private func clearSelectedPhotoAssets() {
+        selectedPhotoAssetIdentifiers = []
+        lastSelectedPhotoAssetIdentifier = nil
     }
 
     /// Stores manually selected PhotoKit assets as the active Photos source.

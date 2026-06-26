@@ -29,6 +29,8 @@ struct PhotosAssetPickerView: View {
     let error: AppErrorInfo?
     let selectedAssetIdentifiers: Set<String>
     let toggleAsset: (PhotosAssetSummary) -> Void
+    let selectAllAssets: () -> Void
+    let clearSelection: () -> Void
     let confirmSelection: () -> Void
     let refresh: () -> Void
     let dismiss: () -> Void
@@ -86,9 +88,19 @@ struct PhotosAssetPickerView: View {
 
     private var footer: some View {
         HStack {
+            Button("Select All", action: selectAllAssets)
+                .disabled(assets.isEmpty)
+                .keyboardShortcut("a", modifiers: .command)
+                .help("Select all visible photos")
+
+            Button("Clear Selection", action: clearSelection)
+                .disabled(selectedAssetIdentifiers.isEmpty)
+                .help("Clear selected photos")
+
             Spacer(minLength: 0)
 
             Button("Cancel", action: dismiss)
+                .keyboardShortcut(.cancelAction)
                 .help("Close without changing the Photos selection")
 
             Button("Use Selected", action: confirmSelection)
@@ -193,6 +205,9 @@ private struct PhotosAssetThumbnailCell: View {
                 thumbnailContent
 
                 if isSelected {
+                    Color.accentColor
+                        .opacity(0.18)
+
                     Image(systemName: "checkmark.circle.fill")
                         .font(.title3)
                         .symbolRenderingMode(.palette)
