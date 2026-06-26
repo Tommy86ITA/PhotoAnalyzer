@@ -11,6 +11,10 @@ import Foundation
 import AppKit
 #endif
 
+#if canImport(CoreLocation)
+import CoreLocation
+#endif
+
 #if canImport(Photos)
 @preconcurrency import Photos
 #endif
@@ -40,6 +44,8 @@ nonisolated struct PhotosLibraryAssetBrowserService: Sendable {
                     creationDate: asset.creationDate,
                     pixelWidth: asset.pixelWidth,
                     pixelHeight: asset.pixelHeight,
+                    latitude: asset.location?.coordinate.latitude,
+                    longitude: asset.location?.coordinate.longitude,
                     searchText: Self.searchText(
                         creationDate: asset.creationDate,
                         pixelWidth: asset.pixelWidth,

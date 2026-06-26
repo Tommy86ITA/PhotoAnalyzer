@@ -7,6 +7,10 @@
 
 import SwiftUI
 
+#if canImport(MapKit)
+import MapKit
+#endif
+
 #if canImport(AppKit)
 import AppKit
 #endif
@@ -36,7 +40,17 @@ struct PhotosAssetPickerView: View {
     let dismiss: () -> Void
 
     @State private var searchText = ""
+    @State private var placeSearchResult: PhotosPlaceSearchResult?
+    @State private var placeSearchError: String?
+    @State private var isSearchingPlace = false
+
+    #if canImport(MapKit)
+    @State private var mapPosition: MapCameraPosition = .automatic
+    #endif
+
     @AppStorage("photos.assetPicker.thumbnailSide") private var thumbnailSide = PhotosAssetPickerLayout.defaultThumbnailSide
+
+    private let placeSearchService = PhotosPlaceSearchService()
 
     private var thumbnailPixelSide: CGFloat {
         CGFloat(thumbnailSide * PhotosAssetPickerLayout.thumbnailScale)
@@ -48,13 +62,20 @@ struct PhotosAssetPickerView: View {
 
     private var filteredAssets: [PhotosAssetSummary] {
         let query = trimmedSearchText
-        guard !query.isEmpty else {
-            return assets
+
+        let textFilteredAssets = assets.filter { asset in
+            query.isEmpty || asset.searchText.localizedCaseInsensitiveContains(query)
         }
 
-        return assets.filter { asset in
-            asset.searchText.localizedCaseInsensitiveContains(query)
+        #if canImport(CoreLocation)
+        if let placeSearchResult {
+            return textFilteredAssets.filter { asset in
+                asset.isWithin(placeSearchResult)
+            }
         }
+        #endif
+
+        return textFilteredAssets
     }
 
     private var selectedCountText: String {
@@ -117,6 +138,13 @@ struct PhotosAssetPickerView: View {
                 .disabled(selectedAssetIdentifiers.isEmpty)
                 .help("Clear selected photos")
 
+            if placeSearchResult != nil || !searchText.isEmpty {
+                Button("Clear Filters") {
+                    clearFilters()
+                }
+                .help("Clear text and place filters")
+            }
+
             Spacer(minLength: 0)
 
             Button("Cancel", action: dismiss)
@@ -151,12 +179,26 @@ struct PhotosAssetPickerView: View {
                 .buttonStyle(.plain)
                 .help("Clear Search")
             }
+
+            Button {
+                searchPlace()
+            } label: {
+                if isSearchingPlace {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "mappin.and.ellipse")
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(trimmedSearchText.isEmpty || isSearchingPlace)
+            .help("Search this text as a place")
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .frame(width: 220)
+        .frame(width: 260)
         .background(.quaternary, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .help("Search by date, year, month, or image dimensions")
+        .help("Search by date, year, month, dimensions, or use the pin to filter by place")
     }
 
     private var thumbnailSizeControl: some View {
@@ -184,6 +226,57 @@ struct PhotosAssetPickerView: View {
         )
     }
 
+    private func clearFilters() {
+        searchText = ""
+        placeSearchResult = nil
+        placeSearchError = nil
+
+        #if canImport(MapKit)
+        mapPosition = .automatic
+        #endif
+    }
+
+    private func searchPlace() {
+        let query = trimmedSearchText
+        guard !query.isEmpty else {
+            return
+        }
+
+        isSearchingPlace = true
+        placeSearchError = nil
+
+        Task {
+            do {
+                let result = try await placeSearchService.search(query: query)
+                await MainActor.run {
+                    placeSearchResult = result
+                    searchText = ""
+                    isSearchingPlace = false
+                    updateMapPosition(for: result)
+                }
+            } catch {
+                await MainActor.run {
+                    placeSearchResult = nil
+                    placeSearchError = error.localizedDescription
+                    isSearchingPlace = false
+                }
+            }
+        }
+    }
+
+    private func updateMapPosition(for result: PhotosPlaceSearchResult) {
+        #if canImport(MapKit)
+        let radiusDegrees = max(result.radiusMeters / 111_000, 0.2)
+        mapPosition = .region(MKCoordinateRegion(
+            center: result.coordinate,
+            span: MKCoordinateSpan(
+                latitudeDelta: radiusDegrees * 2,
+                longitudeDelta: radiusDegrees * 2
+            )
+        ))
+        #endif
+    }
+
     @ViewBuilder
     private var content: some View {
         if isLoading {
@@ -207,38 +300,118 @@ struct PhotosAssetPickerView: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if filteredAssets.isEmpty {
-            ContentUnavailableView(
-                "No Matching Photos",
-                systemImage: "magnifyingglass",
-                description: Text("No photos match the current search.")
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            ScrollView {
-                LazyVGrid(
-                    columns: [
-                        GridItem(
-                            .adaptive(
-                                minimum: CGFloat(thumbnailSide),
-                                maximum: CGFloat(thumbnailSide)
-                            ),
-                            spacing: PhotosAssetPickerLayout.gridSpacing
-                        )
-                    ],
-                    spacing: PhotosAssetPickerLayout.gridSpacing
-                ) {
-                    ForEach(filteredAssets) { asset in
-                        PhotosAssetThumbnailCell(
-                            asset: asset,
-                            thumbnailSide: CGFloat(thumbnailSide),
-                            thumbnailPixelSide: thumbnailPixelSide,
-                            isSelected: selectedAssetIdentifiers.contains(asset.localIdentifier),
-                            toggleSelection: { toggleAsset(asset, filteredAssets) }
-                        )
-                    }
-                }
-                .padding(PhotosAssetPickerLayout.gridSpacing)
+            VStack(spacing: 0) {
+                placeSearchPanel
+
+                ContentUnavailableView(
+                    "No Matching Photos",
+                    systemImage: "magnifyingglass",
+                    description: Text("No photos match the current filters.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        } else {
+            VStack(spacing: 0) {
+                placeSearchPanel
+
+                ScrollView {
+                    LazyVGrid(
+                        columns: [
+                            GridItem(
+                                .adaptive(
+                                    minimum: CGFloat(thumbnailSide),
+                                    maximum: CGFloat(thumbnailSide)
+                                ),
+                                spacing: PhotosAssetPickerLayout.gridSpacing
+                            )
+                        ],
+                        spacing: PhotosAssetPickerLayout.gridSpacing
+                    ) {
+                        ForEach(filteredAssets) { asset in
+                            PhotosAssetThumbnailCell(
+                                asset: asset,
+                                thumbnailSide: CGFloat(thumbnailSide),
+                                thumbnailPixelSide: thumbnailPixelSide,
+                                isSelected: selectedAssetIdentifiers.contains(asset.localIdentifier),
+                                toggleSelection: { toggleAsset(asset, filteredAssets) }
+                            )
+                        }
+                    }
+                    .padding(PhotosAssetPickerLayout.gridSpacing)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var placeSearchPanel: some View {
+        if let placeSearchResult {
+            HStack(spacing: 12) {
+                #if canImport(MapKit)
+                Map(position: $mapPosition, interactionModes: [.pan, .zoom]) {
+                    MapCircle(center: placeSearchResult.coordinate, radius: placeSearchResult.radiusMeters)
+                        .foregroundStyle(.blue.opacity(0.12))
+                        .stroke(.blue.opacity(0.35), lineWidth: 1)
+
+                    Marker(placeSearchResult.displayName, coordinate: placeSearchResult.coordinate)
+                }
+                .mapStyle(.standard(elevation: .flat))
+                .frame(width: 180, height: 88)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(.secondary.opacity(0.2), lineWidth: 1)
+                }
+                #endif
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(placeSearchResult.displayName, systemImage: "mappin.and.ellipse")
+                        .font(.headline)
+
+                    Text("\(filteredAssets.count) photos within \(Int(placeSearchResult.radiusMeters / 1_000)) km")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+
+                Spacer(minLength: 0)
+
+                Button {
+                    self.placeSearchResult = nil
+
+                    #if canImport(MapKit)
+                    mapPosition = .automatic
+                    #endif
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear place filter")
+            }
+            .padding(.horizontal, PhotosAssetPickerLayout.horizontalPadding)
+            .padding(.vertical, 10)
+            .background(.quaternary.opacity(0.35))
+        } else if let placeSearchError {
+            HStack(spacing: 8) {
+                Label(placeSearchError, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.secondary)
+
+                Spacer(minLength: 0)
+
+                Button {
+                    self.placeSearchError = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Dismiss place search error")
+            }
+            .font(.subheadline)
+            .padding(.horizontal, PhotosAssetPickerLayout.horizontalPadding)
+            .padding(.vertical, 8)
+            .background(.quaternary.opacity(0.35))
         }
     }
 }
