@@ -12,8 +12,11 @@ import AppKit
 #endif
 
 private enum PhotosAssetPickerLayout {
-    static let thumbnailSide: CGFloat = 92
-    static let thumbnailPixelSide: CGFloat = 276
+    static let defaultThumbnailSide = 92.0
+    static let minimumThumbnailSide = 72.0
+    static let maximumThumbnailSide = 140.0
+    static let thumbnailStep = 8.0
+    static let thumbnailScale = 3.0
     static let gridSpacing: CGFloat = 8
 }
 
@@ -27,6 +30,12 @@ struct PhotosAssetPickerView: View {
     let confirmSelection: () -> Void
     let refresh: () -> Void
     let dismiss: () -> Void
+
+    @State private var thumbnailSide = PhotosAssetPickerLayout.defaultThumbnailSide
+
+    private var thumbnailPixelSide: CGFloat {
+        CGFloat(thumbnailSide * PhotosAssetPickerLayout.thumbnailScale)
+    }
 
     private var selectedCountText: String {
         let count = selectedAssetIdentifiers.count
@@ -47,6 +56,8 @@ struct PhotosAssetPickerView: View {
 
                 Spacer()
 
+                thumbnailSizeControl
+
                 Button("Cancel", action: dismiss)
 
                 Button("Use Selected", action: confirmSelection)
@@ -62,6 +73,24 @@ struct PhotosAssetPickerView: View {
         .padding(24)
         .frame(width: 760, height: 560, alignment: .topLeading)
         .onAppear(perform: refresh)
+    }
+
+    private var thumbnailSizeControl: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "photo")
+                .foregroundStyle(.secondary)
+
+            Slider(
+                value: $thumbnailSide,
+                in: PhotosAssetPickerLayout.minimumThumbnailSide...PhotosAssetPickerLayout.maximumThumbnailSide,
+                step: PhotosAssetPickerLayout.thumbnailStep
+            )
+            .frame(width: 150)
+
+            Image(systemName: "photo.fill")
+                .foregroundStyle(.secondary)
+        }
+        .help("Thumbnail size")
     }
 
     @ViewBuilder
@@ -89,8 +118,8 @@ struct PhotosAssetPickerView: View {
                     columns: [
                         GridItem(
                             .adaptive(
-                                minimum: PhotosAssetPickerLayout.thumbnailSide,
-                                maximum: PhotosAssetPickerLayout.thumbnailSide
+                                minimum: CGFloat(thumbnailSide),
+                                maximum: CGFloat(thumbnailSide)
                             ),
                             spacing: PhotosAssetPickerLayout.gridSpacing
                         )
@@ -100,6 +129,8 @@ struct PhotosAssetPickerView: View {
                     ForEach(assets) { asset in
                         PhotosAssetThumbnailCell(
                             asset: asset,
+                            thumbnailSide: CGFloat(thumbnailSide),
+                            thumbnailPixelSide: thumbnailPixelSide,
                             isSelected: selectedAssetIdentifiers.contains(asset.localIdentifier),
                             toggleSelection: { toggleAsset(asset) }
                         )
@@ -113,6 +144,8 @@ struct PhotosAssetPickerView: View {
 
 private struct PhotosAssetThumbnailCell: View {
     let asset: PhotosAssetSummary
+    let thumbnailSide: CGFloat
+    let thumbnailPixelSide: CGFloat
     let isSelected: Bool
     let toggleSelection: () -> Void
 
@@ -132,8 +165,8 @@ private struct PhotosAssetThumbnailCell: View {
                 }
             }
             .frame(
-                width: PhotosAssetPickerLayout.thumbnailSide,
-                height: PhotosAssetPickerLayout.thumbnailSide
+                width: thumbnailSide,
+                height: thumbnailSide
             )
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay {
@@ -142,12 +175,12 @@ private struct PhotosAssetThumbnailCell: View {
             }
         }
         .buttonStyle(.plain)
-        .task(id: asset.localIdentifier) {
+        .task(id: "\(asset.localIdentifier)-\(Int(thumbnailPixelSide))") {
             thumbnail = await PhotosLibraryAssetBrowserService().thumbnail(
                 for: asset.localIdentifier,
                 targetSize: CGSize(
-                    width: PhotosAssetPickerLayout.thumbnailPixelSide,
-                    height: PhotosAssetPickerLayout.thumbnailPixelSide
+                    width: thumbnailPixelSide,
+                    height: thumbnailPixelSide
                 )
             )
         }
@@ -160,8 +193,8 @@ private struct PhotosAssetThumbnailCell: View {
                 .resizable()
                 .scaledToFill()
                 .frame(
-                    width: PhotosAssetPickerLayout.thumbnailSide,
-                    height: PhotosAssetPickerLayout.thumbnailSide
+                    width: thumbnailSide,
+                    height: thumbnailSide
                 )
                 .clipped()
         } else {
