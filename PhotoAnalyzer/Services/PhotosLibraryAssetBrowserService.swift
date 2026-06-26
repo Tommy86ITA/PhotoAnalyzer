@@ -32,9 +32,19 @@ nonisolated struct PhotosLibraryAssetBrowserService: Sendable {
         assets.reserveCapacity(result.count)
 
         result.enumerateObjects { asset, _, _ in
+            let originalFilename = PHAssetResource.assetResources(for: asset).first?.originalFilename
             assets.append(PhotosAssetSummary(
                 localIdentifier: asset.localIdentifier,
-                creationDate: asset.creationDate
+                creationDate: asset.creationDate,
+                originalFilename: originalFilename,
+                pixelWidth: asset.pixelWidth,
+                pixelHeight: asset.pixelHeight,
+                searchText: Self.searchText(
+                    creationDate: asset.creationDate,
+                    originalFilename: originalFilename,
+                    pixelWidth: asset.pixelWidth,
+                    pixelHeight: asset.pixelHeight
+                )
             ))
         }
 
@@ -92,6 +102,45 @@ private extension PhotosLibraryAssetBrowserService {
             NSSortDescriptor(key: "creationDate", ascending: false)
         ]
         return options
+    }
+
+    nonisolated static func searchText(
+        creationDate: Date?,
+        originalFilename: String?,
+        pixelWidth: Int,
+        pixelHeight: Int
+    ) -> String {
+        var tokens = [
+            originalFilename,
+            "\(pixelWidth)x\(pixelHeight)",
+            "\(pixelWidth)",
+            "\(pixelHeight)"
+        ].compactMap { $0 }
+
+        if let creationDate {
+            tokens.append(contentsOf: dateSearchTokens(for: creationDate))
+        }
+
+        return tokens
+            .joined(separator: " ")
+            .lowercased()
+    }
+
+    nonisolated static func dateSearchTokens(for date: Date) -> [String] {
+        let numericFormatter = DateFormatter()
+        numericFormatter.dateStyle = .short
+        numericFormatter.timeStyle = .none
+
+        let monthFormatter = DateFormatter()
+        monthFormatter.dateFormat = "MMMM"
+
+        let year = Calendar.current.component(.year, from: date)
+
+        return [
+            numericFormatter.string(from: date),
+            monthFormatter.string(from: date),
+            String(year)
+        ]
     }
 }
 

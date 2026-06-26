@@ -28,17 +28,33 @@ struct PhotosAssetPickerView: View {
     let isLoading: Bool
     let error: AppErrorInfo?
     let selectedAssetIdentifiers: Set<String>
-    let toggleAsset: (PhotosAssetSummary) -> Void
-    let selectAllAssets: () -> Void
+    let toggleAsset: (PhotosAssetSummary, [PhotosAssetSummary]) -> Void
+    let selectAssets: ([PhotosAssetSummary]) -> Void
     let clearSelection: () -> Void
     let confirmSelection: () -> Void
     let refresh: () -> Void
     let dismiss: () -> Void
 
+    @State private var searchText = ""
     @AppStorage("photos.assetPicker.thumbnailSide") private var thumbnailSide = PhotosAssetPickerLayout.defaultThumbnailSide
 
     private var thumbnailPixelSide: CGFloat {
         CGFloat(thumbnailSide * PhotosAssetPickerLayout.thumbnailScale)
+    }
+
+    private var trimmedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var filteredAssets: [PhotosAssetSummary] {
+        let query = trimmedSearchText
+        guard !query.isEmpty else {
+            return assets
+        }
+
+        return assets.filter { asset in
+            asset.searchText.localizedCaseInsensitiveContains(query)
+        }
     }
 
     private var selectedCountText: String {
@@ -80,6 +96,8 @@ struct PhotosAssetPickerView: View {
 
             Spacer(minLength: 0)
 
+            searchField
+
             thumbnailSizeControl
         }
         .padding(.horizontal, PhotosAssetPickerLayout.horizontalPadding)
@@ -88,8 +106,10 @@ struct PhotosAssetPickerView: View {
 
     private var footer: some View {
         HStack {
-            Button("Select All", action: selectAllAssets)
-                .disabled(assets.isEmpty)
+            Button("Select All") {
+                selectAssets(filteredAssets)
+            }
+                .disabled(filteredAssets.isEmpty)
                 .keyboardShortcut("a", modifiers: .command)
                 .help("Select all visible photos")
 
@@ -111,6 +131,32 @@ struct PhotosAssetPickerView: View {
         }
         .padding(.horizontal, PhotosAssetPickerLayout.horizontalPadding)
         .padding(.vertical, 14)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+
+            TextField("Search", text: $searchText)
+                .textFieldStyle(.plain)
+
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear Search")
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .frame(width: 220)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .help("Search by filename, date, year, month, or image dimensions")
     }
 
     private var thumbnailSizeControl: some View {
@@ -160,6 +206,13 @@ struct PhotosAssetPickerView: View {
                 description: Text("No image assets were found in the Photos Library.")
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if filteredAssets.isEmpty {
+            ContentUnavailableView(
+                "No Matching Photos",
+                systemImage: "magnifyingglass",
+                description: Text("No photos match the current search.")
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
                 LazyVGrid(
@@ -174,13 +227,13 @@ struct PhotosAssetPickerView: View {
                     ],
                     spacing: PhotosAssetPickerLayout.gridSpacing
                 ) {
-                    ForEach(assets) { asset in
+                    ForEach(filteredAssets) { asset in
                         PhotosAssetThumbnailCell(
                             asset: asset,
                             thumbnailSide: CGFloat(thumbnailSide),
                             thumbnailPixelSide: thumbnailPixelSide,
                             isSelected: selectedAssetIdentifiers.contains(asset.localIdentifier),
-                            toggleSelection: { toggleAsset(asset) }
+                            toggleSelection: { toggleAsset(asset, filteredAssets) }
                         )
                     }
                 }

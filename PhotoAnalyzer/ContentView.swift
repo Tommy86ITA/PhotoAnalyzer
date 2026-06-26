@@ -222,7 +222,7 @@ struct ContentView: View {
                 error: photosAssetLoadingError,
                 selectedAssetIdentifiers: selectedPhotoAssetIdentifiers,
                 toggleAsset: toggleSelectedPhotoAsset,
-                selectAllAssets: selectAllPhotoAssets,
+                selectAssets: selectPhotoAssets,
                 clearSelection: clearSelectedPhotoAssets,
                 confirmSelection: confirmSelectedPhotosAssets,
                 refresh: loadPhotosAssets,
@@ -368,7 +368,10 @@ struct ContentView: View {
     }
 
     /// Toggles a PhotoKit asset in the manual Photos selection sheet.
-    private func toggleSelectedPhotoAsset(_ asset: PhotosAssetSummary) {
+    private func toggleSelectedPhotoAsset(
+        _ asset: PhotosAssetSummary,
+        in orderedAssets: [PhotosAssetSummary]
+    ) {
         #if canImport(AppKit)
         let modifierFlags = NSEvent.modifierFlags
         let isCommandSelection = modifierFlags.contains(.command)
@@ -381,6 +384,7 @@ struct ContentView: View {
         if isRangeSelection {
             selectPhotoAssetRange(
                 through: asset,
+                in: orderedAssets,
                 extendsExistingSelection: isCommandSelection
             )
         } else if isCommandSelection {
@@ -404,18 +408,19 @@ struct ContentView: View {
     /// Selects a contiguous range from the last selected asset to the current asset.
     private func selectPhotoAssetRange(
         through asset: PhotosAssetSummary,
+        in orderedAssets: [PhotosAssetSummary],
         extendsExistingSelection: Bool
     ) {
         guard let anchorIdentifier = lastSelectedPhotoAssetIdentifier,
-              let anchorIndex = photosAssets.firstIndex(where: { $0.localIdentifier == anchorIdentifier }),
-              let currentIndex = photosAssets.firstIndex(of: asset) else {
+              let anchorIndex = orderedAssets.firstIndex(where: { $0.localIdentifier == anchorIdentifier }),
+              let currentIndex = orderedAssets.firstIndex(of: asset) else {
             selectedPhotoAssetIdentifiers = [asset.localIdentifier]
             lastSelectedPhotoAssetIdentifier = asset.localIdentifier
             return
         }
 
         let bounds = min(anchorIndex, currentIndex)...max(anchorIndex, currentIndex)
-        let rangeIdentifiers = Set(photosAssets[bounds].map(\.localIdentifier))
+        let rangeIdentifiers = Set(orderedAssets[bounds].map(\.localIdentifier))
 
         if extendsExistingSelection {
             selectedPhotoAssetIdentifiers.formUnion(rangeIdentifiers)
@@ -424,10 +429,10 @@ struct ContentView: View {
         }
     }
 
-    /// Selects every loaded PhotoKit asset in the manual Photos selection sheet.
-    private func selectAllPhotoAssets() {
-        selectedPhotoAssetIdentifiers = Set(photosAssets.map(\.localIdentifier))
-        lastSelectedPhotoAssetIdentifier = photosAssets.last?.localIdentifier
+    /// Selects the provided PhotoKit assets in the manual Photos selection sheet.
+    private func selectPhotoAssets(_ assets: [PhotosAssetSummary]) {
+        selectedPhotoAssetIdentifiers = Set(assets.map(\.localIdentifier))
+        lastSelectedPhotoAssetIdentifier = assets.last?.localIdentifier
     }
 
     /// Clears the manual PhotoKit asset selection.
