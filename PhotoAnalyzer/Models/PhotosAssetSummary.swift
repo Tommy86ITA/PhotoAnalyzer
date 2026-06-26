@@ -11,7 +11,6 @@ import Foundation
 nonisolated struct PhotosAssetSummary: Identifiable, Equatable, Sendable {
     let localIdentifier: String
     let creationDate: Date?
-    let originalFilename: String?
     let pixelWidth: Int
     let pixelHeight: Int
     let searchText: String

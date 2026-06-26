@@ -156,7 +156,7 @@ struct PhotosAssetPickerView: View {
         .padding(.vertical, 5)
         .frame(width: 220)
         .background(.quaternary, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .help("Search by filename, date, year, month, or image dimensions")
+        .help("Search by date, year, month, or image dimensions")
     }
 
     private var thumbnailSizeControl: some View {

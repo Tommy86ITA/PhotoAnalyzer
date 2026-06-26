@@ -32,16 +32,13 @@ nonisolated struct PhotosLibraryAssetBrowserService: Sendable {
         assets.reserveCapacity(result.count)
 
         result.enumerateObjects { asset, _, _ in
-            let originalFilename = PHAssetResource.assetResources(for: asset).first?.originalFilename
             assets.append(PhotosAssetSummary(
                 localIdentifier: asset.localIdentifier,
                 creationDate: asset.creationDate,
-                originalFilename: originalFilename,
                 pixelWidth: asset.pixelWidth,
                 pixelHeight: asset.pixelHeight,
                 searchText: Self.searchText(
                     creationDate: asset.creationDate,
-                    originalFilename: originalFilename,
                     pixelWidth: asset.pixelWidth,
                     pixelHeight: asset.pixelHeight
                 )
@@ -106,12 +103,10 @@ private extension PhotosLibraryAssetBrowserService {
 
     nonisolated static func searchText(
         creationDate: Date?,
-        originalFilename: String?,
         pixelWidth: Int,
         pixelHeight: Int
     ) -> String {
         var tokens = [
-            originalFilename,
             "\(pixelWidth)x\(pixelHeight)",
             "\(pixelWidth)",
             "\(pixelHeight)"
