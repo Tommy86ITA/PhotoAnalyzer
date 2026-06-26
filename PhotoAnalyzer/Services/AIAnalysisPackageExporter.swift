@@ -74,6 +74,7 @@ final class AIAnalysisPackageExporter {
 			sourceFileURLs: sourceFileURLs,
 			statistics: statistics,
 			paths: paths,
+			displayInfoByFileURL: [:],
 			progressHandler: nil
 		)
 	}
@@ -94,6 +95,7 @@ final class AIAnalysisPackageExporter {
 		sourceFileURLs: [URL],
 		statistics: PhotoStatistics,
 		paths: AIAnalysisPackagePaths,
+		displayInfoByFileURL: [URL: SourceFileDisplayInfo] = [:],
 		progressHandler: (@Sendable (ProgressSnapshot) -> Void)?
 	) throws -> AIAnalysisPackagePaths {
 		try Task.checkCancellation()
@@ -106,7 +108,8 @@ final class AIAnalysisPackageExporter {
 			try Task.checkCancellation()
 			let indexedMetadata = metadataWithThumbnailIndexes(
 				metadata,
-				sourceFileURLs: sourceFileURLs
+				sourceFileURLs: sourceFileURLs,
+				displayInfoByFileURL: displayInfoByFileURL
 			)
 			try jsonWriter.write(indexedMetadata, to: paths.metadataURL)
 		}
@@ -142,7 +145,8 @@ final class AIAnalysisPackageExporter {
 	/// - Returns: Metadata records augmented with contact sheet indexes.
 	nonisolated private func metadataWithThumbnailIndexes(
 		_ metadata: [ExportPhotoMetadata],
-		sourceFileURLs: [URL]
+		sourceFileURLs: [URL],
+		displayInfoByFileURL: [URL: SourceFileDisplayInfo]
 	) -> [IndexedExportPhotoMetadata] {
 		var indexByPath: [String: String] = [:]
 		var indexByFileName: [String: String] = [:]
@@ -160,27 +164,34 @@ final class AIAnalysisPackageExporter {
 			let sheetFile = sheetCount == 1
 				? AIAnalysisPackagePaths.contactSheetFileName
 				: ContactSheetLayout.pageFileName(page)
+			let displayInfo = displayInfoByFileURL[url]
 			indexByPath[url.path] = index
-			indexByFileName[url.lastPathComponent] = index
+			indexByFileName[displayInfo?.fileName ?? url.lastPathComponent] = index
 			contactSheetPageByPath[url.path] = page
-			contactSheetPageByFileName[url.lastPathComponent] = page
+			contactSheetPageByFileName[displayInfo?.fileName ?? url.lastPathComponent] = page
 			contactSheetFileByPath[url.path] = sheetFile
-			contactSheetFileByFileName[url.lastPathComponent] = sheetFile
+			contactSheetFileByFileName[displayInfo?.fileName ?? url.lastPathComponent] = sheetFile
 		}
 
-		return metadata.map { metadata in
+		return metadata.enumerated().map { offset, metadata in
+			let sourceFileURL = offset < sourceFileURLs.count ? sourceFileURLs[offset] : nil
+			let displayInfo = sourceFileURL.flatMap { displayInfoByFileURL[$0] }
 			let thumbnailIndex = metadata.sourceFile.flatMap { indexByPath[$0] }
 				?? metadata.fileName.flatMap { indexByFileName[$0] }
+				?? sourceFileURL.flatMap { indexByPath[$0.path] }
 			let contactSheetPage = metadata.sourceFile.flatMap { contactSheetPageByPath[$0] }
 				?? metadata.fileName.flatMap { contactSheetPageByFileName[$0] }
+				?? sourceFileURL.flatMap { contactSheetPageByPath[$0.path] }
 			let contactSheetFile = metadata.sourceFile.flatMap { contactSheetFileByPath[$0] }
 				?? metadata.fileName.flatMap { contactSheetFileByFileName[$0] }
+				?? sourceFileURL.flatMap { contactSheetFileByPath[$0.path] }
 
 			return IndexedExportPhotoMetadata(
 				metadata: metadata,
 				thumbnailIndex: thumbnailIndex,
 				contactSheetPage: contactSheetPage,
-				contactSheetFile: contactSheetFile
+				contactSheetFile: contactSheetFile,
+				displayInfo: displayInfo
 			)
 		}
 	}
@@ -200,6 +211,7 @@ final class AIAnalysisPackageExporter {
 			folderURL: folderURL,
 			sourceFileURLs: sourceFileURLs,
 			paths: paths,
+			displayInfoByFileURL: [:],
 			progressHandler: nil
 		)
 	}
@@ -215,6 +227,7 @@ final class AIAnalysisPackageExporter {
 		folderURL: URL,
 		sourceFileURLs: [URL],
 		paths: AIAnalysisPackagePaths,
+		displayInfoByFileURL: [URL: SourceFileDisplayInfo] = [:],
 		progressHandler: (@Sendable (ProgressSnapshot) -> Void)?
 	) async throws {
 		try await PerformanceLogger.measure("Exporting contact sheet and index") {
@@ -223,6 +236,7 @@ final class AIAnalysisPackageExporter {
 				folderURL: folderURL,
 				fileURLs: sourceFileURLs,
 				paths: paths,
+				displayInfoByFileURL: displayInfoByFileURL,
 				progressHandler: progressHandler
 			)
 		}

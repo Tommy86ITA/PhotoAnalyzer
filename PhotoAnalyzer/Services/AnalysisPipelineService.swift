@@ -15,6 +15,29 @@ nonisolated struct AnalysisPipelineRequest: Sendable {
     let expectedSupportedFileCount: Int?
 }
 
+/// Input for running the processing pipeline on files that were already discovered or materialized.
+nonisolated struct PreparedAnalysisPipelineRequest: Sendable {
+    let sourceFolderURL: URL
+    let packageDatasetName: String?
+    let outputFolderURL: URL?
+    let fileURLs: [URL]
+    let displayInfoByFileURL: [URL: SourceFileDisplayInfo]
+
+    init(
+        sourceFolderURL: URL,
+        packageDatasetName: String? = nil,
+        outputFolderURL: URL?,
+        fileURLs: [URL],
+        displayInfoByFileURL: [URL: SourceFileDisplayInfo] = [:]
+    ) {
+        self.sourceFolderURL = sourceFolderURL
+        self.packageDatasetName = packageDatasetName
+        self.outputFolderURL = outputFolderURL
+        self.fileURLs = fileURLs
+        self.displayInfoByFileURL = displayInfoByFileURL
+    }
+}
+
 /// Result produced by the full PhotoAnalyzer processing pipeline.
 nonisolated struct AnalysisPipelineResult: Sendable {
     let paths: AIAnalysisPackagePaths
@@ -38,7 +61,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
         progressHandler: ProgressHandler?
     ) async throws -> AnalysisPipelineResult {
         let expectedPhotoCount = request.expectedSupportedFileCount ?? 0
-        let pipelineTotalUnitCount = totalPipelineUnitCount(for: expectedPhotoCount)
+        let pipelineUnitCount = totalPipelineUnitCount(for: expectedPhotoCount)
         let packagePaths = AIAnalysisPackagePaths(
             datasetFolderURL: request.folderURL,
             outputFolderURL: request.outputFolderURL
@@ -46,7 +69,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
 
         let datasetAccessGranted = request.folderURL.startAccessingSecurityScopedResource()
         if !datasetAccessGranted {
-            print("Warning: security-scoped access was not granted. Continuing anyway.")
+            logSecurityScopedAccessNotRequiredOrGranted(for: request.folderURL)
         }
 
         let outputAccessGranted = request.outputFolderURL?.startAccessingSecurityScopedResource() ?? false
@@ -64,7 +87,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
 
         emitProgress(
             completedUnitCount: completedPipelineUnitCount,
-            totalUnitCount: pipelineTotalUnitCount,
+            totalUnitCount: pipelineUnitCount,
             message: "Scanning files...",
             phase: .scanningFiles,
             progressHandler: progressHandler
@@ -72,7 +95,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
         let scanningProgressUnitCount = Int64(max(1, expectedPhotoCount))
         let scanningProgressHandler = progressMapper(
             startingUnitCount: completedPipelineUnitCount,
-            totalUnitCount: pipelineTotalUnitCount,
+            totalUnitCount: pipelineUnitCount,
             phase: .scanningFiles,
             progressHandler: progressHandler
         )
@@ -89,7 +112,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
         completedPipelineUnitCount += scanningProgressUnitCount
         emitProgress(
             completedUnitCount: completedPipelineUnitCount,
-            totalUnitCount: pipelineTotalUnitCount,
+            totalUnitCount: pipelineUnitCount,
             message: "Scanning files...",
             phase: .scanningFiles,
             progressHandler: progressHandler
@@ -99,10 +122,81 @@ nonisolated struct AnalysisPipelineService: Sendable {
             throw AnalysisPipelineError.noSupportedFiles
         }
 
+        return try await runPreparedFiles(
+            request: PreparedAnalysisPipelineRequest(
+                sourceFolderURL: request.folderURL,
+                packageDatasetName: request.folderURL.lastPathComponent,
+                outputFolderURL: request.outputFolderURL,
+                fileURLs: fileURLs
+            ),
+            packagePaths: packagePaths,
+            completedPipelineUnitCount: completedPipelineUnitCount,
+            totalPipelineUnitCount: pipelineUnitCount,
+            progressHandler: progressHandler
+        )
+    }
+
+    func runPreparedFiles(
+        request: PreparedAnalysisPipelineRequest,
+        progressHandler: ProgressHandler?
+    ) async throws -> AnalysisPipelineResult {
+        let pipelineUnitCount = preparedPipelineUnitCount(for: request.fileURLs.count)
+        let packagePaths = AIAnalysisPackagePaths(
+            datasetName: request.packageDatasetName ?? request.sourceFolderURL.lastPathComponent,
+            datasetFolderURL: request.sourceFolderURL,
+            outputFolderURL: request.outputFolderURL
+        )
+
+        let sourceAccessGranted = request.sourceFolderURL.startAccessingSecurityScopedResource()
+        if !sourceAccessGranted {
+            logSecurityScopedAccessNotRequiredOrGranted(for: request.sourceFolderURL)
+        }
+
+        let outputAccessGranted = request.outputFolderURL?.startAccessingSecurityScopedResource() ?? false
+        defer {
+            if sourceAccessGranted {
+                request.sourceFolderURL.stopAccessingSecurityScopedResource()
+            }
+
+            if outputAccessGranted {
+                request.outputFolderURL?.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        return try await runPreparedFiles(
+            request: request,
+            packagePaths: packagePaths,
+            completedPipelineUnitCount: 0,
+            totalPipelineUnitCount: pipelineUnitCount,
+            progressHandler: progressHandler
+        )
+    }
+
+    private func logSecurityScopedAccessNotRequiredOrGranted(for url: URL) {
+        #if DEBUG
+        print("Security-scoped access was not required or not granted for: \(url.path)")
+        #endif
+    }
+
+    private func runPreparedFiles(
+        request: PreparedAnalysisPipelineRequest,
+        packagePaths: AIAnalysisPackagePaths,
+        completedPipelineUnitCount initialCompletedPipelineUnitCount: Int64,
+        totalPipelineUnitCount: Int64,
+        progressHandler: ProgressHandler?
+    ) async throws -> AnalysisPipelineResult {
+        let fileURLs = request.fileURLs
+
+        guard !fileURLs.isEmpty else {
+            throw AnalysisPipelineError.noSupportedFiles
+        }
+
+        var completedPipelineUnitCount = initialCompletedPipelineUnitCount
+
         let metadataProgressUnitCount = Int64(max(1, fileURLs.count))
         let metadataProgressHandler = progressMapper(
             startingUnitCount: completedPipelineUnitCount,
-            totalUnitCount: pipelineTotalUnitCount,
+            totalUnitCount: totalPipelineUnitCount,
             phase: .readingMetadata,
             progressHandler: progressHandler
         )
@@ -116,7 +210,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
         completedPipelineUnitCount += metadataProgressUnitCount
         emitProgress(
             completedUnitCount: completedPipelineUnitCount,
-            totalUnitCount: pipelineTotalUnitCount,
+            totalUnitCount: totalPipelineUnitCount,
             message: "Reading metadata...",
             phase: .readingMetadata,
             progressHandler: progressHandler
@@ -124,7 +218,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
 
         emitProgress(
             completedUnitCount: completedPipelineUnitCount,
-            totalUnitCount: pipelineTotalUnitCount,
+            totalUnitCount: totalPipelineUnitCount,
             message: "Generating statistics...",
             phase: .generatingStatistics,
             progressHandler: progressHandler
@@ -137,7 +231,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
         completedPipelineUnitCount += 1
         emitProgress(
             completedUnitCount: completedPipelineUnitCount,
-            totalUnitCount: pipelineTotalUnitCount,
+            totalUnitCount: totalPipelineUnitCount,
             message: "Generating statistics...",
             phase: .generatingStatistics,
             progressHandler: progressHandler
@@ -145,24 +239,25 @@ nonisolated struct AnalysisPipelineService: Sendable {
 
         emitProgress(
             completedUnitCount: completedPipelineUnitCount,
-            totalUnitCount: pipelineTotalUnitCount,
+            totalUnitCount: totalPipelineUnitCount,
             message: "Exporting AI package...",
             phase: .exportingAIPackage,
             progressHandler: progressHandler
         )
         let dataExportProgressHandler = progressMapper(
             startingUnitCount: completedPipelineUnitCount,
-            totalUnitCount: pipelineTotalUnitCount,
+            totalUnitCount: totalPipelineUnitCount,
             phase: .exportingAIPackage,
             progressHandler: progressHandler
         )
         let paths = try await runCancellableDetached {
             try dependencies.exportDataFiles(
-                request.folderURL,
+                request.sourceFolderURL,
                 folderAnalysisResult.exportMetadata,
                 folderAnalysisResult.fileURLs,
                 generatedStatistics,
                 packagePaths,
+                request.displayInfoByFileURL,
                 dataExportProgressHandler
             )
         }
@@ -170,7 +265,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
 
         emitProgress(
             completedUnitCount: completedPipelineUnitCount,
-            totalUnitCount: pipelineTotalUnitCount,
+            totalUnitCount: totalPipelineUnitCount,
             message: "Generating contact sheet...",
             phase: .generatingContactSheet,
             progressHandler: progressHandler
@@ -178,15 +273,16 @@ nonisolated struct AnalysisPipelineService: Sendable {
         let contactSheetProgressUnitCount = Int64(contactSheetUnitCount(for: folderAnalysisResult.fileURLs.count))
         let contactSheetProgressHandler = progressMapper(
             startingUnitCount: completedPipelineUnitCount,
-            totalUnitCount: pipelineTotalUnitCount,
+            totalUnitCount: totalPipelineUnitCount,
             phase: .generatingContactSheet,
             progressHandler: progressHandler
         )
         try await runCancellableDetached {
             try await dependencies.exportContactSheet(
-                request.folderURL,
+                request.sourceFolderURL,
                 folderAnalysisResult.fileURLs,
                 paths,
+                request.displayInfoByFileURL,
                 contactSheetProgressHandler
             )
         }
@@ -196,14 +292,14 @@ nonisolated struct AnalysisPipelineService: Sendable {
         let archiveProgressUnitCount = Int64(zipArchiveUnitCount(for: folderAnalysisResult.fileURLs.count))
         emitProgress(
             completedUnitCount: completedPipelineUnitCount,
-            totalUnitCount: pipelineTotalUnitCount,
+            totalUnitCount: totalPipelineUnitCount,
             message: "Archiving package...",
             phase: .archivingPackage,
             progressHandler: progressHandler
         )
         let archiveProgressHandler = progressMapper(
             startingUnitCount: completedPipelineUnitCount,
-            totalUnitCount: pipelineTotalUnitCount,
+            totalUnitCount: totalPipelineUnitCount,
             allocatedUnitCount: archiveProgressUnitCount,
             phase: .archivingPackage,
             progressHandler: progressHandler
@@ -262,8 +358,12 @@ nonisolated struct AnalysisPipelineService: Sendable {
 
     private func totalPipelineUnitCount(for photoCount: Int) -> Int64 {
         let safePhotoCount = max(1, photoCount)
+        return Int64(safePhotoCount) + preparedPipelineUnitCount(for: safePhotoCount)
+    }
+
+    private func preparedPipelineUnitCount(for photoCount: Int) -> Int64 {
+        let safePhotoCount = max(1, photoCount)
         return Int64(
-            safePhotoCount +
             safePhotoCount +
             1 +
             2 +

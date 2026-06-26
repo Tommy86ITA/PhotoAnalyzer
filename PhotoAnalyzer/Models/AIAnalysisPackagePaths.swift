@@ -22,8 +22,22 @@ nonisolated struct AIAnalysisPackagePaths {
     }
 
     init(datasetFolderURL: URL, outputFolderURL: URL?, createdAt: Date = Date()) {
+        self.init(
+            datasetName: datasetFolderURL.lastPathComponent,
+            datasetFolderURL: datasetFolderURL,
+            outputFolderURL: outputFolderURL,
+            createdAt: createdAt
+        )
+    }
+
+    init(
+        datasetName: String,
+        datasetFolderURL: URL,
+        outputFolderURL: URL?,
+        createdAt: Date = Date()
+    ) {
         if let outputFolderURL {
-            let datasetName = Self.sanitizedFolderName(from: datasetFolderURL.lastPathComponent)
+            let datasetName = Self.sanitizedFolderName(from: datasetName)
             let timestamp = Self.timestampFormatter.string(from: createdAt)
             let packageFolderName = "\(datasetName)_\(Self.folderName)_\(timestamp)"
             packageURL = outputFolderURL.appendingPathComponent(packageFolderName, isDirectory: true)
