@@ -33,7 +33,7 @@ struct PhotosAssetPickerView: View {
     let refresh: () -> Void
     let dismiss: () -> Void
 
-    @State private var thumbnailSide = PhotosAssetPickerLayout.defaultThumbnailSide
+    @AppStorage("photos.assetPicker.thumbnailSide") private var thumbnailSide = PhotosAssetPickerLayout.defaultThumbnailSide
 
     private var thumbnailPixelSide: CGFloat {
         CGFloat(thumbnailSide * PhotosAssetPickerLayout.thumbnailScale)
@@ -58,7 +58,10 @@ struct PhotosAssetPickerView: View {
             footer
         }
         .frame(width: 820, height: 600, alignment: .topLeading)
-        .onAppear(perform: refresh)
+        .onAppear {
+            normalizePersistedThumbnailSide()
+            refresh()
+        }
     }
 
     private var header: some View {
@@ -114,6 +117,13 @@ struct PhotosAssetPickerView: View {
                 .foregroundStyle(.secondary)
         }
         .help("Thumbnail size")
+    }
+
+    private func normalizePersistedThumbnailSide() {
+        thumbnailSide = min(
+            PhotosAssetPickerLayout.maximumThumbnailSide,
+            max(PhotosAssetPickerLayout.minimumThumbnailSide, thumbnailSide)
+        )
     }
 
     @ViewBuilder
