@@ -138,7 +138,7 @@ private struct PhotosAssetThumbnailCell: View {
         .task(id: asset.localIdentifier) {
             thumbnail = await PhotosLibraryAssetBrowserService().thumbnail(
                 for: asset.localIdentifier,
-                targetSize: CGSize(width: 184, height: 184)
+                targetSize: CGSize(width: 92, height: 92)
             )
         }
     }

@@ -45,7 +45,6 @@ nonisolated struct PhotosLibraryAssetBrowserService: Sendable {
     }
 
     #if canImport(AppKit)
-    @MainActor
     func thumbnail(
         for localIdentifier: String,
         targetSize: CGSize
@@ -60,10 +59,11 @@ nonisolated struct PhotosLibraryAssetBrowserService: Sendable {
         }
 
         let options = PHImageRequestOptions()
-        options.deliveryMode = .opportunistic
-        options.resizeMode = .fast
+        options.deliveryMode = .fastFormat
+        options.resizeMode = .exact
         options.isNetworkAccessAllowed = false
         options.isSynchronous = false
+        options.version = .current
 
         return await PHCachingImageManager.default().requestFinalImage(
             for: asset,
@@ -112,6 +112,13 @@ private extension PHImageManager {
                 contentMode: contentMode,
                 options: options
             ) { image, info in
+                if info?[PHImageErrorKey] != nil || info?[PHImageCancelledKey] != nil {
+                    if didResume.setIfUnset() {
+                        continuation.resume(returning: nil)
+                    }
+                    return
+                }
+
                 if let isDegraded = info?[PHImageResultIsDegradedKey] as? Bool, isDegraded {
                     return
                 }
