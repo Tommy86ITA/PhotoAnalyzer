@@ -12,11 +12,15 @@ import PhotosUI
 struct DatasetActionView: View {
 	private enum Layout {
 		static let actionColumnWidth: CGFloat = 284
-		static let secondaryButtonWidth: CGFloat = 52
+		static let secondaryButtonSpacing: CGFloat = 6
 		static let secondaryButtonHeight: CGFloat = 44
 		static let infoIconWidth: CGFloat = 18
 		static let infoColumnSpacing: CGFloat = 10
 		static let infoTitleWidth: CGFloat = 86
+
+		static var secondaryButtonWidth: CGFloat {
+			(actionColumnWidth - (secondaryButtonSpacing * 2)) / 3
+		}
 
 		static var infoTitleLeadingPadding: CGFloat {
 			infoIconWidth + infoColumnSpacing
@@ -151,7 +155,7 @@ struct DatasetActionView: View {
 	}
 
 	private var secondaryActions: some View {
-		HStack(spacing: 6) {
+		HStack(spacing: Layout.secondaryButtonSpacing) {
 			compactButton(
 				title: "Select Folder",
 				systemImage: "folder.badge.plus",
@@ -168,9 +172,10 @@ struct DatasetActionView: View {
 			) {
 				Label("Select Photos", systemImage: "photo.on.rectangle.angled")
 					.labelStyle(.iconOnly)
-					.frame(width: Layout.secondaryButtonWidth, height: Layout.secondaryButtonHeight)
+					.frame(maxWidth: .infinity, minHeight: Layout.secondaryButtonHeight)
 			}
 			.buttonStyle(.bordered)
+			.frame(width: Layout.secondaryButtonWidth)
 			.disabled(isAnalyzing || isCountingSupportedFiles)
 			.help("Select Photos")
 
@@ -180,6 +185,7 @@ struct DatasetActionView: View {
 				action: openSettings
 			)
 		}
+		.frame(width: Layout.actionColumnWidth)
 	}
 
 	private func compactButton(
@@ -190,9 +196,10 @@ struct DatasetActionView: View {
 		Button(action: action) {
 			Label(title, systemImage: systemImage)
 				.labelStyle(.iconOnly)
-				.frame(width: Layout.secondaryButtonWidth, height: Layout.secondaryButtonHeight)
+				.frame(maxWidth: .infinity, minHeight: Layout.secondaryButtonHeight)
 		}
 		.buttonStyle(.bordered)
+		.frame(width: Layout.secondaryButtonWidth)
 		.help(title)
 	}
 
