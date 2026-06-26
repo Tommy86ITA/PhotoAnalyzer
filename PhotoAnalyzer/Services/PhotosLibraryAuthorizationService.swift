@@ -13,15 +13,31 @@ import Foundation
 
 /// Requests Photos Library read access for PhotoKit-backed source scopes.
 nonisolated struct PhotosLibraryAuthorizationService: Sendable {
+    #if canImport(Photos)
+    private static let coordinator = PhotosLibraryAuthorizationCoordinator()
+    #endif
+
     func requestReadAccessIfNeeded() async throws {
         #if canImport(Photos)
+        try await Self.coordinator.requestReadAccessIfNeeded()
+        #else
+        throw PhotosLibraryAssetExporterError.photosUnavailable
+        #endif
+    }
+}
+
+#if canImport(Photos)
+private actor PhotosLibraryAuthorizationCoordinator {
+    private var requestTask: Task<PHAuthorizationStatus, Never>?
+
+    func requestReadAccessIfNeeded() async throws {
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
 
         switch status {
         case .authorized, .limited:
             return
         case .notDetermined:
-            let requestedStatus = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+            let requestedStatus = await authorizationRequest().value
             guard requestedStatus == .authorized || requestedStatus == .limited else {
                 throw PhotosLibraryAssetExporterError.unauthorized
             }
@@ -30,8 +46,18 @@ nonisolated struct PhotosLibraryAuthorizationService: Sendable {
         @unknown default:
             throw PhotosLibraryAssetExporterError.unauthorized
         }
-        #else
-        throw PhotosLibraryAssetExporterError.photosUnavailable
-        #endif
+    }
+
+    private func authorizationRequest() -> Task<PHAuthorizationStatus, Never> {
+        if let requestTask {
+            return requestTask
+        }
+
+        let task = Task {
+            await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+        }
+        requestTask = task
+        return task
     }
 }
+#endif

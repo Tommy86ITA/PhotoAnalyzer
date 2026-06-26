@@ -232,6 +232,7 @@ struct ContentView: View {
         }
         .onAppear {
             configureOutputFolder()
+            preflightPhotosLibraryAuthorization()
         }
     }
 
@@ -631,6 +632,19 @@ struct ContentView: View {
             try DefaultOutputFolderProvider.ensureOutputFolderExists(at: selectedOutputFolderURL)
         } catch {
             print("Failed to prepare output folder: \(error)")
+        }
+    }
+
+    /// Triggers the Photos permission prompt once near app startup when access has not been decided yet.
+    private func preflightPhotosLibraryAuthorization() {
+        Task {
+            do {
+                try await PhotosLibraryAuthorizationService().requestReadAccessIfNeeded()
+            } catch PhotosLibraryAssetExporterError.unauthorized {
+                // The user can still grant access later from System Settings.
+            } catch {
+                print("Photos Library authorization preflight failed: \(error)")
+            }
         }
     }
 

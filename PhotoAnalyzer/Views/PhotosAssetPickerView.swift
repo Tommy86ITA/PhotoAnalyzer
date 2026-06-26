@@ -17,7 +17,9 @@ private enum PhotosAssetPickerLayout {
     static let maximumThumbnailSide = 140.0
     static let thumbnailStep = 8.0
     static let thumbnailScale = 3.0
-    static let gridSpacing: CGFloat = 8
+    static let gridSpacing: CGFloat = 10
+    static let horizontalPadding: CGFloat = 24
+    static let verticalPadding: CGFloat = 18
 }
 
 /// Sheet for selecting individual PhotoKit assets as the active Photos source.
@@ -43,38 +45,57 @@ struct PhotosAssetPickerView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Select Photos")
-                        .font(.title2.weight(.semibold))
-
-                    Text(selectedCountText)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                thumbnailSizeControl
-
-                Button("Cancel", action: dismiss)
-                    .help("Close without changing the Photos selection")
-
-                Button("Use Selected", action: confirmSelection)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(selectedAssetIdentifiers.isEmpty)
-                    .keyboardShortcut(.defaultAction)
-                    .help(selectedAssetIdentifiers.isEmpty ? "Select one or more photos first" : "Use the selected photos as the source")
-            }
+        VStack(spacing: 0) {
+            header
 
             Divider()
 
             content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Divider()
+
+            footer
         }
-        .padding(24)
-        .frame(width: 760, height: 560, alignment: .topLeading)
+        .frame(width: 820, height: 600, alignment: .topLeading)
         .onAppear(perform: refresh)
+    }
+
+    private var header: some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Select Photos")
+                    .font(.title2.weight(.semibold))
+
+                Text(selectedCountText)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+
+            Spacer(minLength: 0)
+
+            thumbnailSizeControl
+        }
+        .padding(.horizontal, PhotosAssetPickerLayout.horizontalPadding)
+        .padding(.vertical, PhotosAssetPickerLayout.verticalPadding)
+    }
+
+    private var footer: some View {
+        HStack {
+            Spacer(minLength: 0)
+
+            Button("Cancel", action: dismiss)
+                .help("Close without changing the Photos selection")
+
+            Button("Use Selected", action: confirmSelection)
+                .buttonStyle(.borderedProminent)
+                .disabled(selectedAssetIdentifiers.isEmpty)
+                .keyboardShortcut(.defaultAction)
+                .help(selectedAssetIdentifiers.isEmpty ? "Select one or more photos first" : "Use the selected photos as the source")
+        }
+        .padding(.horizontal, PhotosAssetPickerLayout.horizontalPadding)
+        .padding(.vertical, 14)
     }
 
     private var thumbnailSizeControl: some View {
@@ -101,9 +122,10 @@ struct PhotosAssetPickerView: View {
             ProgressView("Loading Photos...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(spacing: 12) {
                 Label(error.userMessage, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
 
                 Button("Try Again", action: refresh)
                     .help("Reload Photos")
@@ -115,6 +137,7 @@ struct PhotosAssetPickerView: View {
                 systemImage: "photo.on.rectangle.angled",
                 description: Text("No image assets were found in the Photos Library.")
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
                 LazyVGrid(
@@ -139,7 +162,7 @@ struct PhotosAssetPickerView: View {
                         )
                     }
                 }
-                .padding(.vertical, 2)
+                .padding(PhotosAssetPickerLayout.gridSpacing)
             }
         }
     }
@@ -174,7 +197,7 @@ private struct PhotosAssetThumbnailCell: View {
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.2), lineWidth: isSelected ? 3 : 1)
+                    .stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.18), lineWidth: isSelected ? 2 : 1)
             }
         }
         .buttonStyle(.plain)
