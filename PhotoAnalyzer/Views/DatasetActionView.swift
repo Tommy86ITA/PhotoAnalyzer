@@ -50,6 +50,8 @@ struct DatasetActionView: View {
 	let analyze: () -> Void
 	let cancelAnalysis: () -> Void
 
+	@State private var isPhotosSourceMenuPresented = false
+
 	var body: some View {
 		GroupBox("Dataset") {
 			VStack(alignment: .leading, spacing: 10) {
@@ -164,30 +166,7 @@ struct DatasetActionView: View {
 			)
 			.disabled(isAnalyzing || isCountingSupportedFiles)
 
-			Menu {
-				Button(action: selectPhotos) {
-					Label("Select Photos...", systemImage: "photo.on.rectangle.angled")
-				}
-
-				Button(action: choosePhotosAlbum) {
-					Label("Choose Album...", systemImage: "photo.stack")
-				}
-
-				Button(action: useEntirePhotosLibrary) {
-					Label("Use Entire Library", systemImage: "photo.on.rectangle")
-				}
-			} label: {
-				HStack {
-					Spacer()
-					Image(systemName: "photo.on.rectangle.angled")
-					Spacer()
-				}
-				.frame(width: Layout.secondaryButtonWidth, height: Layout.secondaryButtonHeight)
-			}
-			.menuStyle(.button)
-			.controlSize(.regular)
-			.disabled(isAnalyzing || isCountingSupportedFiles)
-			.help("Choose Photos source")
+			photosSourceButton
 
 			compactButton(
 				title: "Settings",
@@ -196,6 +175,68 @@ struct DatasetActionView: View {
 			)
 		}
 		.frame(width: Layout.actionColumnWidth)
+	}
+
+	private var photosSourceButton: some View {
+		Button {
+			isPhotosSourceMenuPresented.toggle()
+		} label: {
+			HStack(spacing: 6) {
+				Image(systemName: "photo.on.rectangle.angled")
+				Image(systemName: "chevron.down")
+					.font(.caption.weight(.semibold))
+			}
+			.frame(maxWidth: .infinity, minHeight: Layout.secondaryButtonHeight)
+		}
+		.buttonStyle(.bordered)
+		.frame(width: Layout.secondaryButtonWidth)
+		.disabled(isAnalyzing || isCountingSupportedFiles)
+		.help("Choose Photos source")
+		.popover(isPresented: $isPhotosSourceMenuPresented, arrowEdge: .bottom) {
+			photosSourceMenu
+				.padding(8)
+				.frame(width: 220)
+		}
+	}
+
+	private var photosSourceMenu: some View {
+		VStack(alignment: .leading, spacing: 4) {
+			photosSourceMenuButton(
+				title: "Select Photos...",
+				systemImage: "photo.on.rectangle.angled",
+				action: selectPhotos
+			)
+
+			photosSourceMenuButton(
+				title: "Choose Album...",
+				systemImage: "photo.stack",
+				action: choosePhotosAlbum
+			)
+
+			photosSourceMenuButton(
+				title: "Use Entire Library",
+				systemImage: "photo.on.rectangle",
+				action: useEntirePhotosLibrary
+			)
+		}
+	}
+
+	private func photosSourceMenuButton(
+		title: String,
+		systemImage: String,
+		action: @escaping () -> Void
+	) -> some View {
+		Button {
+			isPhotosSourceMenuPresented = false
+			action()
+		} label: {
+			Label(title, systemImage: systemImage)
+				.frame(maxWidth: .infinity, alignment: .leading)
+				.padding(.horizontal, 8)
+				.padding(.vertical, 6)
+		}
+		.buttonStyle(.plain)
+		.contentShape(Rectangle())
 	}
 
 	private func compactButton(
