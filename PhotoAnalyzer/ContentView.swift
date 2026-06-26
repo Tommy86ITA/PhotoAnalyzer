@@ -7,6 +7,10 @@
 
 import SwiftUI
 
+#if canImport(AppKit)
+import AppKit
+#endif
+
 /// Main interface for the PhotoAnalyzer macOS application.
 struct ContentView: View {
     private enum Layout {
@@ -27,6 +31,9 @@ struct ContentView: View {
 
     /// Selected PhotoKit asset identifiers used to build a manual Photos Library source.
     @State private var selectedPhotoAssetIdentifiers = Set<String>()
+
+    /// Last manually selected PhotoKit asset, used as the anchor for shift-selection.
+    @State private var lastSelectedPhotoAssetIdentifier: String?
 
     /// Security-scoped output folder for generated AI packages.
     @State private var selectedOutputFolderURL = DefaultOutputFolderProvider.defaultOutputFolderURL()
@@ -301,6 +308,7 @@ struct ContentView: View {
             includeSubfolders: includeSubfolders
         ))
         selectedPhotoAssetIdentifiers = []
+        lastSelectedPhotoAssetIdentifier = nil
         statistics = nil
         packageState = .initial
         contactSheetPreview.reset()
@@ -358,10 +366,58 @@ struct ContentView: View {
 
     /// Toggles a PhotoKit asset in the manual Photos selection sheet.
     private func toggleSelectedPhotoAsset(_ asset: PhotosAssetSummary) {
+        #if canImport(AppKit)
+        let modifierFlags = NSEvent.modifierFlags
+        let isCommandSelection = modifierFlags.contains(.command)
+        let isRangeSelection = modifierFlags.contains(.shift)
+        #else
+        let isCommandSelection = false
+        let isRangeSelection = false
+        #endif
+
+        if isRangeSelection {
+            selectPhotoAssetRange(
+                through: asset,
+                extendsExistingSelection: isCommandSelection
+            )
+        } else if isCommandSelection {
+            togglePhotoAsset(asset)
+        } else {
+            selectedPhotoAssetIdentifiers = [asset.localIdentifier]
+            lastSelectedPhotoAssetIdentifier = asset.localIdentifier
+        }
+    }
+
+    /// Toggles an asset while preserving the rest of the selection.
+    private func togglePhotoAsset(_ asset: PhotosAssetSummary) {
         if selectedPhotoAssetIdentifiers.contains(asset.localIdentifier) {
             selectedPhotoAssetIdentifiers.remove(asset.localIdentifier)
         } else {
             selectedPhotoAssetIdentifiers.insert(asset.localIdentifier)
+            lastSelectedPhotoAssetIdentifier = asset.localIdentifier
+        }
+    }
+
+    /// Selects a contiguous range from the last selected asset to the current asset.
+    private func selectPhotoAssetRange(
+        through asset: PhotosAssetSummary,
+        extendsExistingSelection: Bool
+    ) {
+        guard let anchorIdentifier = lastSelectedPhotoAssetIdentifier,
+              let anchorIndex = photosAssets.firstIndex(where: { $0.localIdentifier == anchorIdentifier }),
+              let currentIndex = photosAssets.firstIndex(of: asset) else {
+            selectedPhotoAssetIdentifiers = [asset.localIdentifier]
+            lastSelectedPhotoAssetIdentifier = asset.localIdentifier
+            return
+        }
+
+        let bounds = min(anchorIndex, currentIndex)...max(anchorIndex, currentIndex)
+        let rangeIdentifiers = Set(photosAssets[bounds].map(\.localIdentifier))
+
+        if extendsExistingSelection {
+            selectedPhotoAssetIdentifiers.formUnion(rangeIdentifiers)
+        } else {
+            selectedPhotoAssetIdentifiers = rangeIdentifiers
         }
     }
 
@@ -472,6 +528,7 @@ struct ContentView: View {
     ) {
         selectedFolderURL = nil
         selectedPhotoAssetIdentifiers = []
+        lastSelectedPhotoAssetIdentifier = nil
         supportedFileCountTask?.cancel()
         supportedFileCountTask = nil
         isCountingSupportedFiles = false

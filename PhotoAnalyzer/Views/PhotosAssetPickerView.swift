@@ -11,13 +11,14 @@ import SwiftUI
 import AppKit
 #endif
 
+private enum PhotosAssetPickerLayout {
+    static let thumbnailSide: CGFloat = 92
+    static let thumbnailPixelSide: CGFloat = 184
+    static let gridSpacing: CGFloat = 8
+}
+
 /// Sheet for selecting individual PhotoKit assets as the active Photos source.
 struct PhotosAssetPickerView: View {
-    private enum Layout {
-        static let thumbnailSide: CGFloat = 92
-        static let gridSpacing: CGFloat = 8
-    }
-
     let assets: [PhotosAssetSummary]
     let isLoading: Bool
     let error: AppErrorInfo?
@@ -87,11 +88,14 @@ struct PhotosAssetPickerView: View {
                 LazyVGrid(
                     columns: [
                         GridItem(
-                            .adaptive(minimum: Layout.thumbnailSide, maximum: Layout.thumbnailSide),
-                            spacing: Layout.gridSpacing
+                            .adaptive(
+                                minimum: PhotosAssetPickerLayout.thumbnailSide,
+                                maximum: PhotosAssetPickerLayout.thumbnailSide
+                            ),
+                            spacing: PhotosAssetPickerLayout.gridSpacing
                         )
                     ],
-                    spacing: Layout.gridSpacing
+                    spacing: PhotosAssetPickerLayout.gridSpacing
                 ) {
                     ForEach(assets) { asset in
                         PhotosAssetThumbnailCell(
@@ -127,7 +131,10 @@ private struct PhotosAssetThumbnailCell: View {
                         .padding(6)
                 }
             }
-            .frame(width: 92, height: 92)
+            .frame(
+                width: PhotosAssetPickerLayout.thumbnailSide,
+                height: PhotosAssetPickerLayout.thumbnailSide
+            )
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -138,7 +145,10 @@ private struct PhotosAssetThumbnailCell: View {
         .task(id: asset.localIdentifier) {
             thumbnail = await PhotosLibraryAssetBrowserService().thumbnail(
                 for: asset.localIdentifier,
-                targetSize: CGSize(width: 92, height: 92)
+                targetSize: CGSize(
+                    width: PhotosAssetPickerLayout.thumbnailPixelSide,
+                    height: PhotosAssetPickerLayout.thumbnailPixelSide
+                )
             )
         }
     }
@@ -149,7 +159,10 @@ private struct PhotosAssetThumbnailCell: View {
             Image(nsImage: thumbnail)
                 .resizable()
                 .scaledToFill()
-                .frame(width: 92, height: 92)
+                .frame(
+                    width: PhotosAssetPickerLayout.thumbnailSide,
+                    height: PhotosAssetPickerLayout.thumbnailSide
+                )
                 .clipped()
         } else {
             Rectangle()
