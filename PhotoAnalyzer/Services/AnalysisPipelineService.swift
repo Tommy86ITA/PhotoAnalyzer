@@ -69,7 +69,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
 
         let datasetAccessGranted = request.folderURL.startAccessingSecurityScopedResource()
         if !datasetAccessGranted {
-            print("Warning: security-scoped access was not granted. Continuing anyway.")
+            logSecurityScopedAccessNotRequiredOrGranted(for: request.folderURL)
         }
 
         let outputAccessGranted = request.outputFolderURL?.startAccessingSecurityScopedResource() ?? false
@@ -149,7 +149,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
 
         let sourceAccessGranted = request.sourceFolderURL.startAccessingSecurityScopedResource()
         if !sourceAccessGranted {
-            print("Warning: security-scoped access was not granted. Continuing anyway.")
+            logSecurityScopedAccessNotRequiredOrGranted(for: request.sourceFolderURL)
         }
 
         let outputAccessGranted = request.outputFolderURL?.startAccessingSecurityScopedResource() ?? false
@@ -170,6 +170,12 @@ nonisolated struct AnalysisPipelineService: Sendable {
             totalPipelineUnitCount: pipelineUnitCount,
             progressHandler: progressHandler
         )
+    }
+
+    private func logSecurityScopedAccessNotRequiredOrGranted(for url: URL) {
+        #if DEBUG
+        print("Security-scoped access was not required or not granted for: \(url.path)")
+        #endif
     }
 
     private func runPreparedFiles(

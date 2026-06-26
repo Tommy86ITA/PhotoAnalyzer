@@ -13,5 +13,17 @@ struct PhotoAnalyzerApp: App {
         WindowGroup {
             ContentView()
         }
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings...") {
+                    NotificationCenter.default.post(name: .openPhotoAnalyzerSettings, object: nil)
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+        }
     }
+}
+
+extension Notification.Name {
+    static let openPhotoAnalyzerSettings = Notification.Name("openPhotoAnalyzerSettings")
 }

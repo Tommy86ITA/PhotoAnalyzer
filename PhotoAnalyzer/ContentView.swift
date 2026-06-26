@@ -29,14 +29,20 @@ struct ContentView: View {
     /// Photos picker selection used to build a Photos Library source.
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
 
-    /// Optional security-scoped output folder for generated AI packages.
-    @State private var selectedOutputFolderURL: URL?
+    /// Security-scoped output folder for generated AI packages.
+    @State private var selectedOutputFolderURL = DefaultOutputFolderProvider.defaultOutputFolderURL()
 
     /// Whether selected dataset subfolders should be scanned.
     @AppStorage("analysis.includeSubfolders") private var includeSubfolders = false
 
-    /// Whether the Photos picker should prefer the current asset encoding instead of automatic transcoding.
-    @AppStorage("photos.useCurrentEncoding") private var useCurrentPhotosEncoding = true
+    /// Whether Photos Library analysis should use unmodified original assets.
+    @AppStorage("photos.useUnmodifiedOriginals") private var useUnmodifiedPhotosOriginals = true
+
+    /// Whether Photos Library analysis may download missing iCloud originals.
+    @AppStorage("photos.downloadMissingOriginals") private var downloadMissingPhotosOriginals = false
+
+    /// Security-scoped bookmark for the user-selected output folder.
+    @AppStorage("outputFolder.bookmark") private var outputFolderBookmarkData = Data()
 
     /// User-facing state for the selected dataset.
     @State private var datasetState = DatasetUIState.initial
@@ -82,18 +88,19 @@ struct ContentView: View {
 
                 DatasetActionView(
                     datasetState: datasetState,
-                    outputFolderURL: selectedOutputFolderURL,
                     sourceIconName: sourceIconName,
                     sourceText: sourceText,
                     sourcePath: sourcePath,
                     isSourcePlaceholder: selectedAnalysisSource == nil,
+                    isFolderSource: isFolderSource,
                     canAnalyze: canAnalyzeSelectedSource,
                     isAnalyzing: isAnalyzing,
                     isCountingSupportedFiles: isCountingSupportedFiles,
-                    useCurrentPhotosEncoding: useCurrentPhotosEncoding,
+                    useUnmodifiedPhotosOriginals: useUnmodifiedPhotosOriginals,
+                    downloadMissingPhotosOriginals: downloadMissingPhotosOriginals,
+                    includeSubfolders: $includeSubfolders,
                     selectedPhotoItems: $selectedPhotoItems,
                     selectFolder: selectFolder,
-                    selectOutputFolder: selectOutputFolder,
                     openSettings: openSettings,
                     analyze: analyzeSelectedSource,
                     cancelAnalysis: cancelAnalysis
@@ -153,13 +160,27 @@ struct ContentView: View {
         .onChange(of: selectedPhotoItems) { _, newItems in
             selectPhotos(from: newItems)
         }
+        .onChange(of: useUnmodifiedPhotosOriginals) { _, _ in
+            updateSelectedPhotosPolicy()
+        }
+        .onChange(of: downloadMissingPhotosOriginals) { _, _ in
+            updateSelectedPhotosPolicy()
+        }
         .sheet(isPresented: $isShowingSettings) {
             SettingsView(
-                includeSubfolders: $includeSubfolders,
-                useCurrentPhotosEncoding: $useCurrentPhotosEncoding,
+                useUnmodifiedPhotosOriginals: $useUnmodifiedPhotosOriginals,
+                downloadMissingPhotosOriginals: $downloadMissingPhotosOriginals,
+                outputFolderURL: selectedOutputFolderURL,
                 canEditSettings: !isAnalyzing && !isCountingSupportedFiles,
+                selectOutputFolder: selectOutputFolder,
                 dismiss: { isShowingSettings = false }
             )
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openPhotoAnalyzerSettings)) { _ in
+            openSettings()
+        }
+        .onAppear {
+            configureOutputFolder()
         }
     }
 
@@ -190,6 +211,22 @@ struct ContentView: View {
             return false
         }
         return (datasetState.supportedFileCount ?? 0) > 0
+    }
+
+    private var isFolderSource: Bool {
+        if case .folder = selectedAnalysisSource {
+            return true
+        }
+
+        return false
+    }
+
+    private var photosAssetRepresentation: PhotosAssetRepresentation {
+        useUnmodifiedPhotosOriginals ? .original : .current
+    }
+
+    private var photosNetworkAccessPolicy: PhotosNetworkAccessPolicy {
+        downloadMissingPhotosOriginals ? .downloadMissingOriginals : .localOnly
     }
 
     private var footerProgress: AnalysisProgress? {
@@ -264,7 +301,8 @@ struct ContentView: View {
 
         selectedAnalysisSource = .photosLibrary(PhotosSelection(
             mode: .assets(localIdentifiers: pickerIdentifiers),
-            representation: .original
+            representation: photosAssetRepresentation,
+            networkAccessPolicy: photosNetworkAccessPolicy
         ))
         datasetState = DatasetUIState(
             folderURL: nil,
@@ -275,7 +313,7 @@ struct ContentView: View {
         analysisPhase = .ready
     }
 
-    /// Opens a folder picker and stores the optional AI package output folder.
+    /// Opens a folder picker and stores the AI package output folder.
     private func selectOutputFolder() {
         guard !isAnalyzing else {
             return
@@ -288,11 +326,43 @@ struct ContentView: View {
             return
         }
 
+        do {
+            try DefaultOutputFolderProvider.ensureOutputFolderExists(at: url)
+            outputFolderBookmarkData = try OutputFolderBookmarkStore.bookmarkData(for: url)
+        } catch {
+            print("Failed to persist output folder selection: \(error)")
+        }
+
         selectedOutputFolderURL = url
         packageState = .initial
         contactSheetPreview.reset()
         analysisProgress = nil
         analysisPhase = .ready
+    }
+
+    /// Resolves a persisted output folder, or creates the default Documents/PhotoAnalyzer folder.
+    private func configureOutputFolder() {
+        selectedOutputFolderURL = OutputFolderBookmarkStore.resolveBookmarkData(outputFolderBookmarkData)
+            ?? DefaultOutputFolderProvider.defaultOutputFolderURL()
+
+        do {
+            try DefaultOutputFolderProvider.ensureOutputFolderExists(at: selectedOutputFolderURL)
+        } catch {
+            print("Failed to prepare output folder: \(error)")
+        }
+    }
+
+    /// Applies current Photos analysis preferences to the active Photos source.
+    private func updateSelectedPhotosPolicy() {
+        guard case .photosLibrary(let selection) = selectedAnalysisSource else {
+            return
+        }
+
+        selectedAnalysisSource = .photosLibrary(PhotosSelection(
+            mode: selection.mode,
+            representation: photosAssetRepresentation,
+            networkAccessPolicy: photosNetworkAccessPolicy
+        ))
     }
 
     /// Starts analysis for the selected folder.
@@ -318,11 +388,6 @@ struct ContentView: View {
             }
             analysisTask = task
         case .photosLibrary:
-            guard selectedOutputFolderURL != nil else {
-                analysisPhase = .noOutputFolderSelected
-                return
-            }
-
             let photoItems = selectedPhotoItems
             let task = Task {
                 await analyzeSelectedPhotos(items: photoItems)
@@ -447,11 +512,7 @@ struct ContentView: View {
             return
         }
 
-        guard let outputFolderURL = selectedOutputFolderURL else {
-            analysisPhase = .noOutputFolderSelected
-            analysisTask = nil
-            return
-        }
+        let outputFolderURL = selectedOutputFolderURL
 
         let packagePaths = AIAnalysisPackagePaths(
             datasetName: "Photos Library",
@@ -487,7 +548,10 @@ struct ContentView: View {
         var materializationResult: PhotosMaterializationResult?
 
         do {
-            let result = try await materializePhotosSelection(items: items)
+            let result = try await materializePhotosSelection(
+                items: items,
+                representation: photosAssetRepresentation
+            )
             materializationResult = result
             defer {
                 result.workspace.cleanup()
@@ -547,9 +611,15 @@ struct ContentView: View {
     }
 
     /// Runs Photos picker materialization away from the main actor.
-    private func materializePhotosSelection(items: [PhotosPickerItem]) async throws -> PhotosMaterializationResult {
+    private func materializePhotosSelection(
+        items: [PhotosPickerItem],
+        representation: PhotosAssetRepresentation
+    ) async throws -> PhotosMaterializationResult {
         let task = Task.detached(priority: .utility) {
-            try await PhotosPickerItemAssetExporter().export(items: items)
+            try await PhotosPickerItemAssetExporter().export(
+                items: items,
+                representation: representation
+            )
         }
 
         return try await withTaskCancellationHandler {

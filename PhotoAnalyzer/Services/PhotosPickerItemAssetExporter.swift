@@ -21,7 +21,10 @@ final class PhotosPickerItemAssetExporter {
         self.workspaceFactory = workspaceFactory
     }
 
-    func export(items: [PhotosPickerItem]) async throws -> PhotosMaterializationResult {
+    func export(
+        items: [PhotosPickerItem],
+        representation: PhotosAssetRepresentation = .original
+    ) async throws -> PhotosMaterializationResult {
         let workspace = try workspaceFactory()
         var exportedAssets: [MaterializedPhotosAsset] = []
         var skippedAssets: [PhotosAssetExportFailure] = []
@@ -55,7 +58,7 @@ final class PhotosPickerItemAssetExporter {
                     assetLocalIdentifier: assetIdentifier,
                     originalFilename: importedFile.preferredFilename,
                     fileURL: destinationURL,
-                    representation: .original
+                    representation: representation
                 ))
             } catch is CancellationError {
                 workspace.cleanup()

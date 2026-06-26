@@ -11,7 +11,11 @@ import SwiftUI
 
 /// Photos input variants supported by the backend.
 nonisolated enum PhotosSourceAnalysisInput: Sendable {
-    case pickerItems([PhotosPickerItem], datasetName: String = "Photos Library")
+    case pickerItems(
+        [PhotosPickerItem],
+        datasetName: String = "Photos Library",
+        representation: PhotosAssetRepresentation = .original
+    )
     case librarySelection(
         PhotosSelection,
         datasetName: String = "Photos Library",
@@ -22,15 +26,21 @@ nonisolated enum PhotosSourceAnalysisInput: Sendable {
 /// Facade that chooses the right Photos backend while preserving the file-based core pipeline.
 nonisolated struct PhotosSourceAnalysisService: Sendable {
     typealias ProgressHandler = AnalysisPipelineService.ProgressHandler
-    typealias MaterializePickerItems = @Sendable ([PhotosPickerItem]) async throws -> PhotosMaterializationResult
+    typealias MaterializePickerItems = @Sendable (
+        [PhotosPickerItem],
+        PhotosAssetRepresentation
+    ) async throws -> PhotosMaterializationResult
 
     private let materializePickerItems: MaterializePickerItems
     private let photosPipelineService: PhotosAnalysisPipelineService
     private let pipelineService: AnalysisPipelineService
 
     init(
-        materializePickerItems: @escaping MaterializePickerItems = { items in
-            try await PhotosPickerItemAssetExporter().export(items: items)
+        materializePickerItems: @escaping MaterializePickerItems = { items, representation in
+            try await PhotosPickerItemAssetExporter().export(
+                items: items,
+                representation: representation
+            )
         },
         photosPipelineService: PhotosAnalysisPipelineService = PhotosAnalysisPipelineService(),
         pipelineService: AnalysisPipelineService = AnalysisPipelineService()
@@ -46,10 +56,11 @@ nonisolated struct PhotosSourceAnalysisService: Sendable {
         progressHandler: ProgressHandler?
     ) async throws -> PhotosAnalysisPipelineResult {
         switch input {
-        case .pickerItems(let items, let datasetName):
+        case .pickerItems(let items, let datasetName, let representation):
             return try await runPickerItems(
                 items,
                 datasetName: datasetName,
+                representation: representation,
                 outputFolderURL: outputFolderURL,
                 progressHandler: progressHandler
             )
@@ -69,6 +80,7 @@ nonisolated struct PhotosSourceAnalysisService: Sendable {
     private func runPickerItems(
         _ items: [PhotosPickerItem],
         datasetName: String,
+        representation: PhotosAssetRepresentation,
         outputFolderURL: URL?,
         progressHandler: ProgressHandler?
     ) async throws -> PhotosAnalysisPipelineResult {
@@ -80,7 +92,7 @@ nonisolated struct PhotosSourceAnalysisService: Sendable {
             )
         )
 
-        let materializationResult = try await materializePickerItems(items)
+        let materializationResult = try await materializePickerItems(items, representation)
         defer {
             materializationResult.workspace.cleanup()
         }

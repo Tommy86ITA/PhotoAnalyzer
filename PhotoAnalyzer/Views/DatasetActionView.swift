@@ -11,23 +11,35 @@ import PhotosUI
 /// Top action area for choosing a dataset and generating an AI package.
 struct DatasetActionView: View {
 	private enum Layout {
-		static let actionColumnWidth: CGFloat = 296
+		static let actionColumnWidth: CGFloat = 224
 		static let secondaryButtonSize: CGFloat = 44
+		static let infoIconWidth: CGFloat = 18
+		static let infoColumnSpacing: CGFloat = 10
+		static let infoTitleWidth: CGFloat = 86
+
+		static var infoTitleLeadingPadding: CGFloat {
+			infoIconWidth + infoColumnSpacing
+		}
+
+		static var infoValueLeadingPadding: CGFloat {
+			infoTitleLeadingPadding + infoTitleWidth + infoColumnSpacing
+		}
 	}
 
 	let datasetState: DatasetUIState
-	let outputFolderURL: URL?
 	let sourceIconName: String
 	let sourceText: String
 	let sourcePath: String?
 	let isSourcePlaceholder: Bool
+	let isFolderSource: Bool
 	let canAnalyze: Bool
 	let isAnalyzing: Bool
 	let isCountingSupportedFiles: Bool
-	let useCurrentPhotosEncoding: Bool
+	let useUnmodifiedPhotosOriginals: Bool
+	let downloadMissingPhotosOriginals: Bool
+	@Binding var includeSubfolders: Bool
 	@Binding var selectedPhotoItems: [PhotosPickerItem]
 	let selectFolder: () -> Void
-	let selectOutputFolder: () -> Void
 	let openSettings: () -> Void
 	let analyze: () -> Void
 	let cancelAnalysis: () -> Void
@@ -37,21 +49,7 @@ struct DatasetActionView: View {
 			VStack(alignment: .leading, spacing: 10) {
 				HStack(alignment: .top, spacing: 18) {
 					VStack(alignment: .leading, spacing: 8) {
-						pathRow(
-							iconName: sourceIconName,
-							title: "Source",
-							text: sourceText,
-							path: sourcePath,
-							isPlaceholder: isSourcePlaceholder
-						)
-
-						pathRow(
-							iconName: outputFolderURL == nil ? "tray" : "tray.full",
-							title: "Output",
-							text: outputFolderText,
-							path: outputFolderURL?.path,
-							isPlaceholder: outputFolderURL == nil
-						)
+						sourceDetails
 					}
 					.frame(maxWidth: .infinity, alignment: .leading)
 
@@ -72,6 +70,85 @@ struct DatasetActionView: View {
 		}
 	}
 
+	@ViewBuilder
+	private var sourceDetails: some View {
+		if isSourcePlaceholder {
+			infoRow(
+				iconName: sourceIconName,
+				title: "Source",
+				text: sourceText,
+				isPlaceholder: true
+			)
+		} else if isFolderSource {
+			infoRow(
+				iconName: "folder.fill",
+				title: "Source",
+				text: "Folder"
+			)
+
+			infoRow(
+				iconName: "folder",
+				title: "Folder path",
+				text: sourcePath ?? sourceText,
+				path: sourcePath,
+				usesMonospacedText: true
+			)
+
+			Toggle("Include subfolders", isOn: $includeSubfolders)
+				.disabled(isAnalyzing || isCountingSupportedFiles)
+				.controlSize(.small)
+				.padding(.leading, Layout.infoValueLeadingPadding)
+		} else {
+			infoRow(
+				iconName: "photo.on.rectangle.angled",
+				title: "Source",
+				text: "Photos Library"
+			)
+
+			infoRow(
+				iconName: "checkmark.circle",
+				title: "Selected files",
+				text: datasetState.supportedFilesText
+			)
+
+			photosOptionsRow
+		}
+	}
+
+	private var photosOptionsRow: some View {
+		HStack(alignment: .firstTextBaseline, spacing: Layout.infoColumnSpacing) {
+			Image(systemName: "slider.horizontal.3")
+				.foregroundStyle(.secondary)
+				.frame(width: Layout.infoIconWidth)
+
+			Text("Options")
+				.font(.footnote.weight(.semibold))
+				.foregroundStyle(.secondary)
+				.frame(width: Layout.infoTitleWidth, alignment: .leading)
+
+			photosSettingsIndicators
+		}
+	}
+
+	private var photosSettingsIndicators: some View {
+		HStack(spacing: 12) {
+			Label(
+				useUnmodifiedPhotosOriginals ? "Originals" : "Current version",
+				systemImage: useUnmodifiedPhotosOriginals ? "photo.badge.checkmark" : "photo"
+			)
+			.help(useUnmodifiedPhotosOriginals ? "Using unmodified originals" : "Using current Photos versions")
+
+			Label(
+				downloadMissingPhotosOriginals ? "iCloud downloads" : "Local only",
+				systemImage: downloadMissingPhotosOriginals ? "icloud.and.arrow.down" : "icloud.slash"
+			)
+				.foregroundStyle(downloadMissingPhotosOriginals ? .blue : .secondary)
+				.help(downloadMissingPhotosOriginals ? "iCloud downloads enabled" : "iCloud downloads disabled")
+		}
+		.font(.footnote)
+		.foregroundStyle(.secondary)
+	}
+
 	private var secondaryActions: some View {
 		HStack(spacing: 6) {
 			compactButton(
@@ -84,8 +161,9 @@ struct DatasetActionView: View {
 			PhotosPicker(
 				selection: $selectedPhotoItems,
 				maxSelectionCount: nil,
+				selectionBehavior: .ordered,
 				matching: .images,
-				preferredItemEncoding: useCurrentPhotosEncoding ? .current : .automatic
+				preferredItemEncoding: useUnmodifiedPhotosOriginals ? .current : .automatic
 			) {
 				Label("Select Photos", systemImage: "photo.on.rectangle.angled")
 					.labelStyle(.iconOnly)
@@ -94,13 +172,6 @@ struct DatasetActionView: View {
 			.buttonStyle(.bordered)
 			.disabled(isAnalyzing || isCountingSupportedFiles)
 			.help("Select Photos")
-
-			compactButton(
-				title: "Select Output",
-				systemImage: "tray.and.arrow.down",
-				action: selectOutputFolder
-			)
-			.disabled(isAnalyzing)
 
 			compactButton(
 				title: "Settings",
@@ -124,36 +195,35 @@ struct DatasetActionView: View {
 		.help(title)
 	}
 
-	private var outputFolderText: String {
-		outputFolderURL?.path ?? "Same as dataset folder"
-	}
-
-	private func pathRow(
+	private func infoRow(
 		iconName: String,
 		title: String,
 		text: String,
-		path: String?,
-		isPlaceholder: Bool
+		path: String? = nil,
+		isPlaceholder: Bool = false,
+		usesMonospacedText: Bool = false
 	) -> some View {
-		HStack(alignment: .firstTextBaseline, spacing: 10) {
+		HStack(alignment: .firstTextBaseline, spacing: Layout.infoColumnSpacing) {
 			Image(systemName: iconName)
 				.foregroundStyle(.secondary)
-				.frame(width: 18)
+				.frame(width: Layout.infoIconWidth)
 
 			Text(title)
 				.font(.footnote.weight(.semibold))
 				.foregroundStyle(.secondary)
-				.frame(width: 52, alignment: .leading)
+				.frame(width: Layout.infoTitleWidth, alignment: .leading)
 
 			Text(text)
-				.font(.system(.body, design: .monospaced))
+				.font(usesMonospacedText ? .system(.body, design: .monospaced) : .body)
 				.foregroundStyle(isPlaceholder ? .secondary : .primary)
 				.lineLimit(1)
 				.truncationMode(.middle)
 				.textSelection(.enabled)
 				.help(path ?? text)
 
-			CopyPathButton(path: path)
+			if path != nil {
+				CopyPathButton(path: path)
+			}
 		}
 		.help(path ?? text)
 	}

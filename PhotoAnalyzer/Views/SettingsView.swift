@@ -9,9 +9,11 @@ import SwiftUI
 
 /// Dedicated settings surface for persisted analysis preferences.
 struct SettingsView: View {
-    @Binding var includeSubfolders: Bool
-    @Binding var useCurrentPhotosEncoding: Bool
+    @Binding var useUnmodifiedPhotosOriginals: Bool
+    @Binding var downloadMissingPhotosOriginals: Bool
+    let outputFolderURL: URL
     let canEditSettings: Bool
+    let selectOutputFolder: () -> Void
     let dismiss: () -> Void
 
     var body: some View {
@@ -29,18 +31,50 @@ struct SettingsView: View {
             Divider()
 
             Form {
-                Section("Folder Analysis") {
-                    Toggle("Include folder subfolders", isOn: $includeSubfolders)
+                Section("Output") {
+                    HStack(spacing: 10) {
+                        Label("AI package folder", systemImage: "tray.full")
+
+                        Spacer(minLength: 12)
+
+                        Text(outputFolderText)
+                            .font(.system(.body, design: .monospaced))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help(outputFolderText)
+
+                        CopyPathButton(path: outputFolderURL.path)
+
+                        Button("Choose...", action: selectOutputFolder)
+                            .disabled(!canEditSettings)
+                    }
                 }
 
                 Section("Photos Library") {
-                    Toggle("Use current Photos encoding", isOn: $useCurrentPhotosEncoding)
+                    Toggle("Use unmodified originals", isOn: $useUnmodifiedPhotosOriginals)
+                    Toggle("Download missing iCloud originals", isOn: $downloadMissingPhotosOriginals)
+
+                    if downloadMissingPhotosOriginals {
+                        Label {
+                            Text("Downloading high-resolution files from iCloud can make analysis slower. Be careful when using metered or limited network connections.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle")
+                                .foregroundStyle(.yellow)
+                        }
+                    }
                 }
             }
             .formStyle(.grouped)
             .disabled(!canEditSettings)
         }
         .padding(24)
-        .frame(width: 460, height: 260, alignment: .topLeading)
+        .frame(width: 640, height: 400, alignment: .topLeading)
+    }
+
+    private var outputFolderText: String {
+        outputFolderURL.path
     }
 }
