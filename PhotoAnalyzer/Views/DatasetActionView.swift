@@ -12,7 +12,8 @@ import PhotosUI
 struct DatasetActionView: View {
 	private enum Layout {
 		static let actionColumnWidth: CGFloat = 284
-		static let secondaryButtonSize: CGFloat = 44
+		static let secondaryButtonWidth: CGFloat = 52
+		static let secondaryButtonHeight: CGFloat = 44
 		static let infoIconWidth: CGFloat = 18
 		static let infoColumnSpacing: CGFloat = 10
 		static let infoTitleWidth: CGFloat = 86
@@ -167,7 +168,7 @@ struct DatasetActionView: View {
 			) {
 				Label("Select Photos", systemImage: "photo.on.rectangle.angled")
 					.labelStyle(.iconOnly)
-					.frame(width: Layout.secondaryButtonSize, height: Layout.secondaryButtonSize)
+					.frame(width: Layout.secondaryButtonWidth, height: Layout.secondaryButtonHeight)
 			}
 			.buttonStyle(.bordered)
 			.disabled(isAnalyzing || isCountingSupportedFiles)
@@ -189,7 +190,7 @@ struct DatasetActionView: View {
 		Button(action: action) {
 			Label(title, systemImage: systemImage)
 				.labelStyle(.iconOnly)
-				.frame(width: Layout.secondaryButtonSize, height: Layout.secondaryButtonSize)
+				.frame(width: Layout.secondaryButtonWidth, height: Layout.secondaryButtonHeight)
 		}
 		.buttonStyle(.bordered)
 		.help(title)
