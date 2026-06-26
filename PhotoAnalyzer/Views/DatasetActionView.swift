@@ -182,11 +182,10 @@ struct DatasetActionView: View {
 					Image(systemName: "photo.on.rectangle.angled")
 					Spacer()
 				}
-				.frame(maxWidth: .infinity, minHeight: Layout.secondaryButtonHeight)
+				.frame(width: Layout.secondaryButtonWidth, height: Layout.secondaryButtonHeight)
 			}
 			.menuStyle(.button)
 			.controlSize(.regular)
-			.frame(width: Layout.secondaryButtonWidth)
 			.disabled(isAnalyzing || isCountingSupportedFiles)
 			.help("Choose Photos source")
 
