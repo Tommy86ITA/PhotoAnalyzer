@@ -177,12 +177,15 @@ struct DatasetActionView: View {
 					Label("Use Entire Library", systemImage: "photo.on.rectangle")
 				}
 			} label: {
-				Label("Select Photos", systemImage: "photo.on.rectangle.angled")
-					.labelStyle(.iconOnly)
-					.frame(maxWidth: .infinity, minHeight: Layout.secondaryButtonHeight)
+				HStack {
+					Spacer()
+					Image(systemName: "photo.on.rectangle.angled")
+					Spacer()
+				}
+				.frame(maxWidth: .infinity, minHeight: Layout.secondaryButtonHeight)
 			}
 			.menuStyle(.button)
-			.buttonStyle(.bordered)
+			.controlSize(.regular)
 			.frame(width: Layout.secondaryButtonWidth)
 			.disabled(isAnalyzing || isCountingSupportedFiles)
 			.help("Choose Photos source")
