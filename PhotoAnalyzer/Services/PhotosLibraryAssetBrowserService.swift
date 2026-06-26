@@ -27,25 +27,29 @@ nonisolated struct PhotosLibraryAssetBrowserService: Sendable {
         #if canImport(Photos)
         try await authorizationService.requestReadAccessIfNeeded()
 
-        let result = PHAsset.fetchAssets(with: imageFetchOptions())
-        var assets: [PhotosAssetSummary] = []
-        assets.reserveCapacity(result.count)
+        let fetchOptions = imageFetchOptions()
 
-        result.enumerateObjects { asset, _, _ in
-            assets.append(PhotosAssetSummary(
-                localIdentifier: asset.localIdentifier,
-                creationDate: asset.creationDate,
-                pixelWidth: asset.pixelWidth,
-                pixelHeight: asset.pixelHeight,
-                searchText: Self.searchText(
+        return await Task.detached(priority: .userInitiated) {
+            let result = PHAsset.fetchAssets(with: fetchOptions)
+            var assets: [PhotosAssetSummary] = []
+            assets.reserveCapacity(result.count)
+
+            result.enumerateObjects { asset, _, _ in
+                assets.append(PhotosAssetSummary(
+                    localIdentifier: asset.localIdentifier,
                     creationDate: asset.creationDate,
                     pixelWidth: asset.pixelWidth,
-                    pixelHeight: asset.pixelHeight
-                )
-            ))
-        }
+                    pixelHeight: asset.pixelHeight,
+                    searchText: Self.searchText(
+                        creationDate: asset.creationDate,
+                        pixelWidth: asset.pixelWidth,
+                        pixelHeight: asset.pixelHeight
+                    )
+                ))
+            }
 
-        return assets
+            return assets
+        }.value
         #else
         throw PhotosLibraryAssetExporterError.photosUnavailable
         #endif
