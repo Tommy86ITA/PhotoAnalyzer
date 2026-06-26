@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import PhotosUI
 
 /// Top action area for choosing a dataset and generating an AI package.
 struct DatasetActionView: View {
@@ -43,8 +42,8 @@ struct DatasetActionView: View {
 	let useUnmodifiedPhotosOriginals: Bool
 	let downloadMissingPhotosOriginals: Bool
 	@Binding var includeSubfolders: Bool
-	@Binding var selectedPhotoItems: [PhotosPickerItem]
 	let selectFolder: () -> Void
+	let selectPhotos: () -> Void
 	let choosePhotosAlbum: () -> Void
 	let useEntirePhotosLibrary: () -> Void
 	let openSettings: () -> Void
@@ -166,13 +165,7 @@ struct DatasetActionView: View {
 			.disabled(isAnalyzing || isCountingSupportedFiles)
 
 			Menu {
-				PhotosPicker(
-					selection: $selectedPhotoItems,
-					maxSelectionCount: nil,
-					selectionBehavior: .ordered,
-					matching: .images,
-					preferredItemEncoding: useUnmodifiedPhotosOriginals ? .current : .automatic
-				) {
+				Button(action: selectPhotos) {
 					Label("Select Photos...", systemImage: "photo.on.rectangle.angled")
 				}
 
