@@ -184,7 +184,8 @@ struct ContentView: View {
                 size: CGSize(width: Layout.windowWidth, height: Layout.windowDefaultHeight),
                 minimumSize: CGSize(width: Layout.windowWidth, height: Layout.windowMinimumHeight)
             )
-            .frame(width: 0, height: 0)
+            .frame(width: 1, height: 1)
+            .accessibilityHidden(true)
         )
         .onChange(of: includeSubfolders) { _, _ in
             updateSupportedFileCountForSelectedFolder()

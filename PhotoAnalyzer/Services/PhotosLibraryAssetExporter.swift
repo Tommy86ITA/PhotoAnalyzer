@@ -97,9 +97,9 @@ nonisolated enum PhotosLibraryAssetExporterError: LocalizedError, Equatable {
 
 /// Materializes Photos Library assets into a temporary workspace for ExifTool-based analysis.
 final class PhotosLibraryAssetExporter {
-    private let workspaceFactory: () throws -> TemporaryAssetWorkspace
+    private let workspaceFactory: @Sendable () throws -> TemporaryAssetWorkspace
 
-    init(workspaceFactory: @escaping () throws -> TemporaryAssetWorkspace = {
+    init(workspaceFactory: @escaping @Sendable () throws -> TemporaryAssetWorkspace = {
         try TemporaryAssetWorkspace()
     }) {
         self.workspaceFactory = workspaceFactory
@@ -121,7 +121,49 @@ final class PhotosLibraryAssetExporter {
         #if canImport(Photos)
         try await requestReadAccessIfNeeded()
 
-        let assets = try fetchAssets(for: selection.mode)
+        let workspaceFactory = workspaceFactory
+        return try await Self.runCancellableDetached {
+            let assets = try Self.fetchAssets(for: selection.mode)
+            return try await Self.exportAuthorizedAssets(
+                assets,
+                selection: selection,
+                options: options,
+                workspaceFactory: workspaceFactory,
+                progressHandler: progressHandler
+            )
+        }
+        #else
+        throw PhotosLibraryAssetExporterError.photosUnavailable
+        #endif
+    }
+}
+
+private extension PhotosLibraryAssetExporter {
+    static func emitProgress(
+        completedAssetCount: Int,
+        totalAssetCount: Int,
+        message: String,
+        progressHandler: PhotosMaterializationProgressHandler?
+    ) {
+        progressHandler?(
+            ProgressSnapshot(
+                completedUnitCount: Int64(completedAssetCount),
+                totalUnitCount: Int64(max(1, totalAssetCount)),
+                message: message
+            )
+        )
+    }
+}
+
+#if canImport(Photos)
+private extension PhotosLibraryAssetExporter {
+    static func exportAuthorizedAssets(
+        _ assets: [PHAsset],
+        selection: PhotosSelection,
+        options: PhotosLibraryExportOptions,
+        workspaceFactory: @Sendable () throws -> TemporaryAssetWorkspace,
+        progressHandler: PhotosMaterializationProgressHandler?
+    ) async throws -> PhotosMaterializationResult {
         if let maximumAssetCount = options.maximumAssetCount,
            assets.count > maximumAssetCount {
             throw PhotosLibraryAssetExporterError.assetLimitExceeded(
@@ -162,7 +204,7 @@ final class PhotosLibraryAssetExporter {
                 continue
             }
 
-            guard let resource = resource(for: asset, representation: selection.representation) else {
+            guard let resource = Self.resource(for: asset, representation: selection.representation) else {
                 skippedAssets.append(PhotosAssetExportFailure(
                     assetLocalIdentifier: localIdentifier,
                     reason: "No exportable image resource was found."
@@ -178,11 +220,11 @@ final class PhotosLibraryAssetExporter {
 
             let destinationURL = workspace.fileURL(
                 preferredFilename: resource.originalFilename,
-                fallbackBasename: stableFallbackName(for: localIdentifier)
+                fallbackBasename: Self.stableFallbackName(for: localIdentifier)
             )
 
             do {
-                try await write(
+                try await Self.write(
                     resource,
                     to: destinationURL,
                     allowsNetworkAccess: selection.networkAccessPolicy.allowsNetworkAccess
@@ -197,7 +239,7 @@ final class PhotosLibraryAssetExporter {
                 try? FileManager.default.removeItem(at: destinationURL)
                 skippedAssets.append(PhotosAssetExportFailure(
                     assetLocalIdentifier: localIdentifier,
-                    reason: exportFailureReason(for: error)
+                    reason: Self.exportFailureReason(for: error)
                 ))
             }
 
@@ -219,31 +261,8 @@ final class PhotosLibraryAssetExporter {
             skippedAssets: skippedAssets,
             workspace: workspace
         )
-        #else
-        throw PhotosLibraryAssetExporterError.photosUnavailable
-        #endif
     }
-}
 
-private extension PhotosLibraryAssetExporter {
-    func emitProgress(
-        completedAssetCount: Int,
-        totalAssetCount: Int,
-        message: String,
-        progressHandler: PhotosMaterializationProgressHandler?
-    ) {
-        progressHandler?(
-            ProgressSnapshot(
-                completedUnitCount: Int64(completedAssetCount),
-                totalUnitCount: Int64(max(1, totalAssetCount)),
-                message: message
-            )
-        )
-    }
-}
-
-#if canImport(Photos)
-private extension PhotosLibraryAssetExporter {
     func requestReadAccessIfNeeded() async throws {
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
 
@@ -262,7 +281,7 @@ private extension PhotosLibraryAssetExporter {
         }
     }
 
-    func fetchAssets(for mode: PhotosSelectionMode) throws -> [PHAsset] {
+    static func fetchAssets(for mode: PhotosSelectionMode) throws -> [PHAsset] {
         switch mode {
         case .assets(let localIdentifiers):
             return fetchAssets(with: localIdentifiers)
@@ -273,7 +292,7 @@ private extension PhotosLibraryAssetExporter {
         }
     }
 
-    func imageFetchOptions() -> PHFetchOptions {
+    static func imageFetchOptions() -> PHFetchOptions {
         let options = PHFetchOptions()
         options.includeHiddenAssets = false
         options.includeAssetSourceTypes = [.typeUserLibrary, .typeCloudShared]
@@ -287,7 +306,7 @@ private extension PhotosLibraryAssetExporter {
         return options
     }
 
-    func fetchAssets(with localIdentifiers: [String]) -> [PHAsset] {
+    static func fetchAssets(with localIdentifiers: [String]) -> [PHAsset] {
         let result = PHAsset.fetchAssets(
             withLocalIdentifiers: localIdentifiers,
             options: imageFetchOptions()
@@ -302,7 +321,7 @@ private extension PhotosLibraryAssetExporter {
         return localIdentifiers.compactMap { assetsByIdentifier[$0] }
     }
 
-    func fetchAlbumAssets(localIdentifier: String) throws -> [PHAsset] {
+    static func fetchAlbumAssets(localIdentifier: String) throws -> [PHAsset] {
         let result = PHAssetCollection.fetchAssetCollections(
             withLocalIdentifiers: [localIdentifier],
             options: nil
@@ -315,11 +334,11 @@ private extension PhotosLibraryAssetExporter {
         return assets(from: PHAsset.fetchAssets(in: collection, options: imageFetchOptions()))
     }
 
-    func fetchLibraryAssets() -> [PHAsset] {
+    static func fetchLibraryAssets() -> [PHAsset] {
         assets(from: PHAsset.fetchAssets(with: imageFetchOptions()))
     }
 
-    func assets(from result: PHFetchResult<PHAsset>) -> [PHAsset] {
+    static func assets(from result: PHFetchResult<PHAsset>) -> [PHAsset] {
         var assets: [PHAsset] = []
         assets.reserveCapacity(result.count)
         result.enumerateObjects { asset, _, _ in
@@ -328,7 +347,7 @@ private extension PhotosLibraryAssetExporter {
         return assets
     }
 
-    func resource(
+    static func resource(
         for asset: PHAsset,
         representation: PhotosAssetRepresentation
     ) -> PHAssetResource? {
@@ -345,7 +364,7 @@ private extension PhotosLibraryAssetExporter {
         }
     }
 
-    func write(
+    static func write(
         _ resource: PHAssetResource,
         to destinationURL: URL,
         allowsNetworkAccess: Bool
@@ -360,14 +379,14 @@ private extension PhotosLibraryAssetExporter {
         )
     }
 
-    func stableFallbackName(for localIdentifier: String) -> String {
+    static func stableFallbackName(for localIdentifier: String) -> String {
         let sanitizedIdentifier = localIdentifier
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: ":", with: "_")
         return sanitizedIdentifier.isEmpty ? "photos_asset" : sanitizedIdentifier
     }
 
-    func exportFailureReason(for error: Error) -> String {
+    static func exportFailureReason(for error: Error) -> String {
         let nsError = error as NSError
         if nsError.domain == PHPhotosErrorDomain,
            PHPhotosError.Code(rawValue: nsError.code) == .networkAccessRequired {
@@ -375,6 +394,19 @@ private extension PhotosLibraryAssetExporter {
         }
 
         return error.localizedDescription
+    }
+
+    static func runCancellableDetached<T>(
+        operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        let task = Task<T, Error>.detached(priority: .utility) {
+            try await operation()
+        }
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 }
 #endif
