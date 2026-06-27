@@ -13,17 +13,20 @@ nonisolated struct PhotosAnalysisPipelineRequest: Sendable {
     let outputFolderURL: URL?
     let datasetName: String
     let exportOptions: PhotosLibraryExportOptions
+    let metadataCacheMaximumSizeMB: Int
 
     init(
         selection: PhotosSelection,
         outputFolderURL: URL?,
         datasetName: String = "Photos Library",
-        exportOptions: PhotosLibraryExportOptions = .unrestricted
+        exportOptions: PhotosLibraryExportOptions = .unrestricted,
+        metadataCacheMaximumSizeMB: Int = MetadataCacheSizeLimit.mb512.rawValue
     ) {
         self.selection = selection
         self.outputFolderURL = outputFolderURL
         self.datasetName = datasetName
         self.exportOptions = exportOptions
+        self.metadataCacheMaximumSizeMB = metadataCacheMaximumSizeMB
     }
 }
 
@@ -110,7 +113,9 @@ nonisolated struct PhotosAnalysisPipelineService: Sendable {
                 packageDatasetName: request.datasetName,
                 outputFolderURL: request.outputFolderURL,
                 fileURLs: materializationResult.fileURLs,
-                displayInfoByFileURL: materializationResult.displayInfoByFileURL
+                displayInfoByFileURL: materializationResult.displayInfoByFileURL,
+                metadataCacheSourceKeyByFileURL: materializationResult.metadataCacheSourceKeyByFileURL,
+                metadataCacheMaximumSizeMB: request.metadataCacheMaximumSizeMB
             ),
             progressHandler: progressHandler
         )

@@ -54,7 +54,12 @@ final class FolderAnalysisService {
 	/// - Parameter fileURLs: Supported image files to analyze in stable order.
 	/// - Returns: Photo information models plus export metadata records.
 	nonisolated func analyzeFilesWithExportMetadata(_ fileURLs: [URL]) async throws -> FolderAnalysisResult {
-		try await analyzeFilesWithExportMetadata(fileURLs, progressHandler: nil)
+		try await analyzeFilesWithExportMetadata(
+			fileURLs,
+			metadataCacheSourceKeyByFileURL: [:],
+			metadataCacheMaximumSizeMB: MetadataCacheSizeLimit.mb512.rawValue,
+			progressHandler: nil
+		)
 	}
 
 	/// Builds `PhotoInfo` values and rich export metadata for supported image files.
@@ -64,15 +69,24 @@ final class FolderAnalysisService {
 	/// - Returns: Photo information models plus export metadata records.
 	nonisolated func analyzeFilesWithExportMetadata(
 		_ fileURLs: [URL],
+		metadataCacheSourceKeyByFileURL: [URL: MetadataCacheSourceKey],
+		metadataCacheMaximumSizeMB: Int,
 		progressHandler: (@Sendable (ProgressSnapshot) -> Void)?
 	) async throws -> FolderAnalysisResult {
 		try PerformanceLogger.measure("Reading metadata / ExifTool analysis") {
 			let exifToolService = ExifToolService()
+			let metadataCacheService = MetadataCacheService()
+			let metadataReader = CachedExifMetadataReader(
+				exifToolService: exifToolService,
+				metadataCacheService: metadataCacheService,
+				maximumSizeMB: metadataCacheMaximumSizeMB
+			)
 			let photoInfoMapper = PhotoInfoMapper()
 			let processPerFileRunner: ExifToolRunner
 			var persistentRunner: PersistentExifToolRunner?
 			var activeRunner: ExifToolRunner
 			var isUsingPersistentRunner = false
+			var metadataCacheHitCount = 0
 			var photos: [PhotoInfo] = []
 			var exportMetadataRecords: [ExportPhotoMetadata] = []
 			var analyzedFileURLs: [URL] = []
@@ -113,8 +127,10 @@ final class FolderAnalysisService {
 					try appendMetadata(
 						for: fileURL,
 						using: activeRunner,
-						exifToolService: exifToolService,
+						metadataReader: metadataReader,
+						metadataCacheSourceKey: metadataCacheSourceKeyByFileURL[fileURL],
 						photoInfoMapper: photoInfoMapper,
+						metadataCacheHitCount: &metadataCacheHitCount,
 						photos: &photos,
 						exportMetadataRecords: &exportMetadataRecords,
 						analyzedFileURLs: &analyzedFileURLs
@@ -132,8 +148,10 @@ final class FolderAnalysisService {
 						try appendMetadata(
 							for: fileURL,
 							using: activeRunner,
-							exifToolService: exifToolService,
+							metadataReader: metadataReader,
+							metadataCacheSourceKey: metadataCacheSourceKeyByFileURL[fileURL],
 							photoInfoMapper: photoInfoMapper,
+							metadataCacheHitCount: &metadataCacheHitCount,
 							photos: &photos,
 							exportMetadataRecords: &exportMetadataRecords,
 							analyzedFileURLs: &analyzedFileURLs
@@ -156,6 +174,7 @@ final class FolderAnalysisService {
 
 			print("Folder analysis completed.")
 			print("Photos analyzed: \(photos.count)")
+			print("Metadata cache hits: \(metadataCacheHitCount)")
 			return FolderAnalysisResult(
 				photos: photos,
 				exportMetadata: exportMetadataRecords,
@@ -167,20 +186,30 @@ final class FolderAnalysisService {
 	private nonisolated func appendMetadata(
 		for fileURL: URL,
 		using runner: ExifToolRunner,
-		exifToolService: ExifToolService,
+		metadataReader: CachedExifMetadataReader,
+		metadataCacheSourceKey: MetadataCacheSourceKey?,
 		photoInfoMapper: PhotoInfoMapper,
+		metadataCacheHitCount: inout Int,
 		photos: inout [PhotoInfo],
 		exportMetadataRecords: inout [ExportPhotoMetadata],
 		analyzedFileURLs: inout [URL]
 	) throws {
-		guard let metadata = try exifToolService.extractAnalysisMetadata(from: fileURL, using: runner) else {
+		guard let result = try metadataReader.readMetadata(
+			for: fileURL,
+			sourceKey: metadataCacheSourceKey,
+			using: runner
+		) else {
 			print("No ExifTool metadata returned for \(fileURL.lastPathComponent)")
 			return
 		}
 
-		let photoInfo = photoInfoMapper.photoInfo(from: metadata, fallbackFileURL: fileURL)
+		if result.isCacheHit {
+			metadataCacheHitCount += 1
+		}
+
+		let photoInfo = photoInfoMapper.photoInfo(from: result.metadata, fallbackFileURL: fileURL)
 		photos.append(photoInfo)
-		exportMetadataRecords.append(metadata)
+		exportMetadataRecords.append(result.metadata)
 		analyzedFileURLs.append(fileURL)
 	}
 }

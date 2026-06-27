@@ -100,8 +100,21 @@ final class ExifToolService {
         from fileURL: URL,
         using runner: ExifToolRunner
     ) throws -> ExportPhotoMetadata? {
-        let data = try runner.run(arguments: analysisArguments(for: fileURL))
+        let data = try extractAnalysisMetadataData(from: fileURL, using: runner)
         return try decodeAnalysisMetadata(from: data)
+    }
+
+    /// Runs analysis metadata extraction and returns the raw ExifTool JSON data.
+    /// - Parameters:
+    ///   - fileURL: The file URL to analyze.
+    ///   - runner: The ExifTool runner to use for this request.
+    /// - Returns: Raw JSON data produced by ExifTool.
+    /// - Throws: `ExifToolError` when validation or execution fails.
+    nonisolated func extractAnalysisMetadataData(
+        from fileURL: URL,
+        using runner: ExifToolRunner
+    ) throws -> Data {
+        try runner.run(arguments: analysisArguments(for: fileURL))
     }
 
     /// Builds the canonical analysis/export argument list for one file.

@@ -11,9 +11,13 @@ import SwiftUI
 struct SettingsView: View {
     @Binding var useUnmodifiedPhotosOriginals: Bool
     @Binding var downloadMissingPhotosOriginals: Bool
+    @Binding var metadataCacheMaximumSizeMB: Int
+    let metadataCacheUsage: MetadataCacheUsage
     let outputFolderURL: URL
     let canEditSettings: Bool
     let selectOutputFolder: () -> Void
+    let refreshMetadataCacheUsage: () -> Void
+    let clearMetadataCache: () -> Void
     let dismiss: () -> Void
 
     var body: some View {
@@ -70,12 +74,20 @@ struct SettingsView: View {
                         }
                     }
                 }
+
+                MetadataCacheSettingsSection(
+                    maximumSizeMB: $metadataCacheMaximumSizeMB,
+                    usage: metadataCacheUsage,
+                    refreshUsage: refreshMetadataCacheUsage,
+                    clearCache: clearMetadataCache
+                )
             }
             .formStyle(.grouped)
             .disabled(!canEditSettings)
         }
         .padding(24)
-        .frame(width: 640, height: 400, alignment: .topLeading)
+        .frame(width: 640, height: 520, alignment: .topLeading)
+        .onAppear(perform: refreshMetadataCacheUsage)
     }
 
     private var outputFolderText: String {

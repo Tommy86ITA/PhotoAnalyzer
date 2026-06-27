@@ -69,7 +69,12 @@ struct AnalysisSourceTests {
             assetLocalIdentifier: "ABCD/L0/001",
             originalFilename: "IMG_0001.HEIC",
             fileURL: URL(fileURLWithPath: "/tmp/materialized.heic"),
-            representation: .original
+            representation: .original,
+            metadataCacheSourceKey: .photosAsset(
+                localIdentifier: "ABCD/L0/001",
+                representation: .original,
+                modificationDate: nil
+            )
         )
 
         #expect(asset.displayInfo.fileName == "IMG_0001.HEIC")

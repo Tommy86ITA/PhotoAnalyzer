@@ -18,6 +18,8 @@ nonisolated struct AnalysisPipelineDependencies: Sendable {
 
     typealias AnalyzeFiles = @Sendable (
         _ fileURLs: [URL],
+        _ metadataCacheSourceKeyByFileURL: [URL: MetadataCacheSourceKey],
+        _ metadataCacheMaximumSizeMB: Int,
         _ progressHandler: (@Sendable (ProgressSnapshot) -> Void)?
     ) async throws -> FolderAnalysisResult
 
@@ -62,9 +64,11 @@ nonisolated struct AnalysisPipelineDependencies: Sendable {
                 progressHandler: progressHandler
             )
         },
-        analyzeFiles: { fileURLs, progressHandler in
+        analyzeFiles: { fileURLs, metadataCacheSourceKeyByFileURL, metadataCacheMaximumSizeMB, progressHandler in
             try await FolderAnalysisService().analyzeFilesWithExportMetadata(
                 fileURLs,
+                metadataCacheSourceKeyByFileURL: metadataCacheSourceKeyByFileURL,
+                metadataCacheMaximumSizeMB: metadataCacheMaximumSizeMB,
                 progressHandler: progressHandler
             )
         },
