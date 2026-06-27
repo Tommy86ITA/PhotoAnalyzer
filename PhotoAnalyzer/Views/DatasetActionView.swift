@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import PhotosUI
 
 /// Top action area for choosing a dataset and generating an AI package.
 struct DatasetActionView: View {
@@ -43,11 +42,15 @@ struct DatasetActionView: View {
 	let useUnmodifiedPhotosOriginals: Bool
 	let downloadMissingPhotosOriginals: Bool
 	@Binding var includeSubfolders: Bool
-	@Binding var selectedPhotoItems: [PhotosPickerItem]
 	let selectFolder: () -> Void
+	let selectPhotos: () -> Void
+	let choosePhotosAlbum: () -> Void
+	let useEntirePhotosLibrary: () -> Void
 	let openSettings: () -> Void
 	let analyze: () -> Void
 	let cancelAnalysis: () -> Void
+
+	@State private var isPhotosSourceMenuPresented = false
 
 	var body: some View {
 		GroupBox("Dataset") {
@@ -103,6 +106,7 @@ struct DatasetActionView: View {
 				.disabled(isAnalyzing || isCountingSupportedFiles)
 				.controlSize(.small)
 				.padding(.leading, Layout.infoValueLeadingPadding)
+				.help("Include images inside nested folders")
 		} else {
 			infoRow(
 				iconName: "photo.on.rectangle.angled",
@@ -163,21 +167,7 @@ struct DatasetActionView: View {
 			)
 			.disabled(isAnalyzing || isCountingSupportedFiles)
 
-			PhotosPicker(
-				selection: $selectedPhotoItems,
-				maxSelectionCount: nil,
-				selectionBehavior: .ordered,
-				matching: .images,
-				preferredItemEncoding: useUnmodifiedPhotosOriginals ? .current : .automatic
-			) {
-				Label("Select Photos", systemImage: "photo.on.rectangle.angled")
-					.labelStyle(.iconOnly)
-					.frame(maxWidth: .infinity, minHeight: Layout.secondaryButtonHeight)
-			}
-			.buttonStyle(.bordered)
-			.frame(width: Layout.secondaryButtonWidth)
-			.disabled(isAnalyzing || isCountingSupportedFiles)
-			.help("Select Photos")
+			photosSourceButton
 
 			compactButton(
 				title: "Settings",
@@ -186,6 +176,69 @@ struct DatasetActionView: View {
 			)
 		}
 		.frame(width: Layout.actionColumnWidth)
+	}
+
+	private var photosSourceButton: some View {
+		Button {
+			isPhotosSourceMenuPresented.toggle()
+		} label: {
+			HStack(spacing: 6) {
+				Image(systemName: "photo.on.rectangle.angled")
+				Image(systemName: "chevron.down")
+					.font(.caption.weight(.semibold))
+			}
+			.frame(maxWidth: .infinity, minHeight: Layout.secondaryButtonHeight)
+		}
+		.buttonStyle(.bordered)
+		.frame(width: Layout.secondaryButtonWidth)
+		.disabled(isAnalyzing || isCountingSupportedFiles)
+		.help("Choose Photos source")
+		.popover(isPresented: $isPhotosSourceMenuPresented, arrowEdge: .bottom) {
+			photosSourceMenu
+				.padding(8)
+				.frame(width: 220)
+		}
+	}
+
+	private var photosSourceMenu: some View {
+		VStack(alignment: .leading, spacing: 4) {
+			photosSourceMenuButton(
+				title: "Select Photos...",
+				systemImage: "photo.on.rectangle.angled",
+				action: selectPhotos
+			)
+
+			photosSourceMenuButton(
+				title: "Choose Album...",
+				systemImage: "photo.stack",
+				action: choosePhotosAlbum
+			)
+
+			photosSourceMenuButton(
+				title: "Use Entire Library",
+				systemImage: "photo.on.rectangle",
+				action: useEntirePhotosLibrary
+			)
+		}
+	}
+
+	private func photosSourceMenuButton(
+		title: String,
+		systemImage: String,
+		action: @escaping () -> Void
+	) -> some View {
+		Button {
+			isPhotosSourceMenuPresented = false
+			action()
+		} label: {
+			Label(title, systemImage: systemImage)
+				.frame(maxWidth: .infinity, alignment: .leading)
+				.padding(.horizontal, 8)
+				.padding(.vertical, 6)
+		}
+		.buttonStyle(.plain)
+		.contentShape(Rectangle())
+		.help(title)
 	}
 
 	private func compactButton(
@@ -289,6 +342,7 @@ struct DatasetActionView: View {
 			.buttonStyle(.borderedProminent)
 			.tint(.red)
 			.frame(maxWidth: .infinity)
+			.help("Cancel the current analysis")
 		} else {
 			Button(action: analyze) {
 				Label("Analyze & Generate AI Package", systemImage: "shippingbox")
@@ -297,6 +351,7 @@ struct DatasetActionView: View {
 			.buttonStyle(.borderedProminent)
 			.disabled(!canAnalyze || isCountingSupportedFiles)
 			.frame(maxWidth: .infinity)
+			.help(canAnalyze ? "Analyze the selected source and generate the AI package" : "Select a valid source before generating the AI package")
 		}
 	}
 }

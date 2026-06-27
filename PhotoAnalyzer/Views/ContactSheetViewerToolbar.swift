@@ -70,6 +70,7 @@ struct ContactSheetViewerToolbar: View {
 
             Slider(value: $zoom, in: minimumZoom...maximumZoom)
                 .frame(width: zoomSliderWidth)
+                .help("Adjust Zoom")
 
             Button {
                 zoomIn()
@@ -106,6 +107,7 @@ struct ContactSheetViewerToolbar: View {
                 close()
             }
             .keyboardShortcut(.defaultAction)
+            .help("Close Contact Sheet Viewer")
         }
     }
 }

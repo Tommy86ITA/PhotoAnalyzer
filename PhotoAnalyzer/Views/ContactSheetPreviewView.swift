@@ -62,7 +62,7 @@ struct ContactSheetPreviewView: View {
                 openViewer()
             }
             .onHover { isHovering = $0 }
-            .help(image == nil ? "" : "Open Contact Sheet")
+            .help(image == nil ? "Generate a contact sheet to preview it" : "Open Contact Sheet")
         }
     }
 

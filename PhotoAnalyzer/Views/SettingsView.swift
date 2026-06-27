@@ -26,6 +26,7 @@ struct SettingsView: View {
 
                 Button("Done", action: dismiss)
                     .keyboardShortcut(.defaultAction)
+                    .help("Close Settings")
             }
 
             Divider()
@@ -47,12 +48,15 @@ struct SettingsView: View {
 
                         Button("Choose...", action: selectOutputFolder)
                             .disabled(!canEditSettings)
+                            .help(canEditSettings ? "Choose Output Folder" : "Settings cannot be changed while analysis is running")
                     }
                 }
 
                 Section("Photos Library") {
                     Toggle("Use unmodified originals", isOn: $useUnmodifiedPhotosOriginals)
+                        .help("Export original, unedited Photos assets when available")
                     Toggle("Download missing iCloud originals", isOn: $downloadMissingPhotosOriginals)
+                        .help("Allow Photos to download missing originals from iCloud during analysis")
 
                     if downloadMissingPhotosOriginals {
                         Label {

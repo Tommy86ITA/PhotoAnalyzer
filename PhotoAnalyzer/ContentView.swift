@@ -6,7 +6,10 @@
 //
 
 import SwiftUI
-import PhotosUI
+
+#if canImport(AppKit)
+import AppKit
+#endif
 
 /// Main interface for the PhotoAnalyzer macOS application.
 struct ContentView: View {
@@ -26,8 +29,11 @@ struct ContentView: View {
     /// The currently selected analysis source.
     @State private var selectedAnalysisSource: AnalysisSource?
 
-    /// Photos picker selection used to build a Photos Library source.
-    @State private var selectedPhotoItems: [PhotosPickerItem] = []
+    /// Selected PhotoKit asset identifiers used to build a manual Photos Library source.
+    @State private var selectedPhotoAssetIdentifiers = Set<String>()
+
+    /// Last manually selected PhotoKit asset, used as the anchor for shift-selection.
+    @State private var lastSelectedPhotoAssetIdentifier: String?
 
     /// Security-scoped output folder for generated AI packages.
     @State private var selectedOutputFolderURL = DefaultOutputFolderProvider.defaultOutputFolderURL()
@@ -80,6 +86,30 @@ struct ContentView: View {
     /// Whether the dedicated settings sheet is visible.
     @State private var isShowingSettings = false
 
+    /// Whether the PhotoKit album picker sheet is visible.
+    @State private var isShowingPhotosAlbumPicker = false
+
+    /// Whether the PhotoKit asset picker sheet is visible.
+    @State private var isShowingPhotosAssetPicker = false
+
+    /// Image assets available for manual PhotoKit-backed Photos selection.
+    @State private var photosAssets: [PhotosAssetSummary] = []
+
+    /// Whether Photos assets are currently loading.
+    @State private var isLoadingPhotosAssets = false
+
+    /// Asset loading error shown in the asset picker sheet.
+    @State private var photosAssetLoadingError: AppErrorInfo?
+
+    /// Albums available for PhotoKit-backed Photos selection.
+    @State private var photosAlbums: [PhotosAlbumSummary] = []
+
+    /// Whether Photos albums are currently loading.
+    @State private var isLoadingPhotosAlbums = false
+
+    /// Album loading error shown in the album picker sheet.
+    @State private var photosAlbumLoadingError: AppErrorInfo?
+
     /// The view hierarchy for the PhotoAnalyzer interface.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -99,8 +129,10 @@ struct ContentView: View {
                     useUnmodifiedPhotosOriginals: useUnmodifiedPhotosOriginals,
                     downloadMissingPhotosOriginals: downloadMissingPhotosOriginals,
                     includeSubfolders: $includeSubfolders,
-                    selectedPhotoItems: $selectedPhotoItems,
                     selectFolder: selectFolder,
+                    selectPhotos: choosePhotosAssets,
+                    choosePhotosAlbum: choosePhotosAlbum,
+                    useEntirePhotosLibrary: useEntirePhotosLibrary,
                     openSettings: openSettings,
                     analyze: analyzeSelectedSource,
                     cancelAnalysis: cancelAnalysis
@@ -152,13 +184,11 @@ struct ContentView: View {
                 size: CGSize(width: Layout.windowWidth, height: Layout.windowDefaultHeight),
                 minimumSize: CGSize(width: Layout.windowWidth, height: Layout.windowMinimumHeight)
             )
-            .frame(width: 0, height: 0)
+            .frame(width: 1, height: 1)
+            .accessibilityHidden(true)
         )
         .onChange(of: includeSubfolders) { _, _ in
             updateSupportedFileCountForSelectedFolder()
-        }
-        .onChange(of: selectedPhotoItems) { _, newItems in
-            selectPhotos(from: newItems)
         }
         .onChange(of: useUnmodifiedPhotosOriginals) { _, _ in
             updateSelectedPhotosPolicy()
@@ -174,6 +204,30 @@ struct ContentView: View {
                 canEditSettings: !isAnalyzing && !isCountingSupportedFiles,
                 selectOutputFolder: selectOutputFolder,
                 dismiss: { isShowingSettings = false }
+            )
+        }
+        .sheet(isPresented: $isShowingPhotosAlbumPicker) {
+            PhotosAlbumPickerView(
+                albums: photosAlbums,
+                isLoading: isLoadingPhotosAlbums,
+                error: photosAlbumLoadingError,
+                selectAlbum: selectPhotosAlbum,
+                refresh: loadPhotosAlbums,
+                dismiss: { isShowingPhotosAlbumPicker = false }
+            )
+        }
+        .sheet(isPresented: $isShowingPhotosAssetPicker) {
+            PhotosAssetPickerView(
+                assets: photosAssets,
+                isLoading: isLoadingPhotosAssets,
+                error: photosAssetLoadingError,
+                selectedAssetIdentifiers: selectedPhotoAssetIdentifiers,
+                toggleAsset: toggleSelectedPhotoAsset,
+                selectAssets: selectPhotoAssets,
+                clearSelection: clearSelectedPhotoAssets,
+                confirmSelection: confirmSelectedPhotosAssets,
+                refresh: loadPhotosAssets,
+                dismiss: { isShowingPhotosAssetPicker = false }
             )
         }
         .onReceive(NotificationCenter.default.publisher(for: .openPhotoAnalyzerSettings)) { _ in
@@ -256,7 +310,8 @@ struct ContentView: View {
             folderURL: url,
             includeSubfolders: includeSubfolders
         ))
-        selectedPhotoItems = []
+        selectedPhotoAssetIdentifiers = []
+        lastSelectedPhotoAssetIdentifier = nil
         statistics = nil
         packageState = .initial
         contactSheetPreview.reset()
@@ -271,14 +326,136 @@ struct ContentView: View {
         startSupportedFileCount(for: url, includeSubfolders: includeSubfolders)
     }
 
-    /// Stores selected Photos picker items as the active analysis source.
-    private func selectPhotos(from items: [PhotosPickerItem]) {
+    /// Opens the PhotoKit asset picker.
+    private func choosePhotosAssets() {
         guard !isAnalyzing, !isCountingSupportedFiles else {
             return
         }
 
-        let pickerIdentifiers = items.indices.map { "picker-item-\($0 + 1)" }
+        isShowingPhotosAssetPicker = true
+        loadPhotosAssets()
+    }
 
+    /// Loads PhotoKit assets for the manual Photos picker sheet.
+    private func loadPhotosAssets() {
+        guard !isLoadingPhotosAssets else {
+            return
+        }
+
+        isLoadingPhotosAssets = true
+        photosAssetLoadingError = nil
+
+        Task {
+            do {
+                let assets = try await PhotosLibraryAssetBrowserService().fetchImageAssets()
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                photosAssets = assets
+                photosAssetLoadingError = nil
+            } catch {
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                photosAssets = []
+                photosAssetLoadingError = AppErrorInfo.exportFailure(error)
+            }
+
+            isLoadingPhotosAssets = false
+        }
+    }
+
+    /// Toggles a PhotoKit asset in the manual Photos selection sheet.
+    private func toggleSelectedPhotoAsset(
+        _ asset: PhotosAssetSummary,
+        in orderedAssets: [PhotosAssetSummary]
+    ) {
+        #if canImport(AppKit)
+        let modifierFlags = NSEvent.modifierFlags
+        let isCommandSelection = modifierFlags.contains(.command)
+        let isRangeSelection = modifierFlags.contains(.shift)
+        #else
+        let isCommandSelection = false
+        let isRangeSelection = false
+        #endif
+
+        if isRangeSelection {
+            selectPhotoAssetRange(
+                through: asset,
+                in: orderedAssets,
+                extendsExistingSelection: isCommandSelection
+            )
+        } else if isCommandSelection {
+            togglePhotoAsset(asset)
+        } else {
+            selectedPhotoAssetIdentifiers = [asset.localIdentifier]
+            lastSelectedPhotoAssetIdentifier = asset.localIdentifier
+        }
+    }
+
+    /// Toggles an asset while preserving the rest of the selection.
+    private func togglePhotoAsset(_ asset: PhotosAssetSummary) {
+        if selectedPhotoAssetIdentifiers.contains(asset.localIdentifier) {
+            selectedPhotoAssetIdentifiers.remove(asset.localIdentifier)
+        } else {
+            selectedPhotoAssetIdentifiers.insert(asset.localIdentifier)
+            lastSelectedPhotoAssetIdentifier = asset.localIdentifier
+        }
+    }
+
+    /// Selects a contiguous range from the last selected asset to the current asset.
+    private func selectPhotoAssetRange(
+        through asset: PhotosAssetSummary,
+        in orderedAssets: [PhotosAssetSummary],
+        extendsExistingSelection: Bool
+    ) {
+        guard let anchorIdentifier = lastSelectedPhotoAssetIdentifier,
+              let anchorIndex = orderedAssets.firstIndex(where: { $0.localIdentifier == anchorIdentifier }),
+              let currentIndex = orderedAssets.firstIndex(of: asset) else {
+            selectedPhotoAssetIdentifiers = [asset.localIdentifier]
+            lastSelectedPhotoAssetIdentifier = asset.localIdentifier
+            return
+        }
+
+        let bounds = min(anchorIndex, currentIndex)...max(anchorIndex, currentIndex)
+        let rangeIdentifiers = Set(orderedAssets[bounds].map(\.localIdentifier))
+
+        if extendsExistingSelection {
+            selectedPhotoAssetIdentifiers.formUnion(rangeIdentifiers)
+        } else {
+            selectedPhotoAssetIdentifiers = rangeIdentifiers
+        }
+    }
+
+    /// Selects the provided PhotoKit assets in the manual Photos selection sheet.
+    private func selectPhotoAssets(_ assets: [PhotosAssetSummary]) {
+        selectedPhotoAssetIdentifiers = Set(assets.map(\.localIdentifier))
+        lastSelectedPhotoAssetIdentifier = assets.last?.localIdentifier
+    }
+
+    /// Clears the manual PhotoKit asset selection.
+    private func clearSelectedPhotoAssets() {
+        selectedPhotoAssetIdentifiers = []
+        lastSelectedPhotoAssetIdentifier = nil
+    }
+
+    /// Stores manually selected PhotoKit assets as the active Photos source.
+    private func confirmSelectedPhotosAssets() {
+        guard !selectedPhotoAssetIdentifiers.isEmpty else {
+            return
+        }
+
+        let identifiers = photosAssets
+            .map(\.localIdentifier)
+            .filter { selectedPhotoAssetIdentifiers.contains($0) }
+
+        selectedAnalysisSource = .photosLibrary(PhotosSelection(
+            mode: .assets(localIdentifiers: identifiers),
+            representation: photosAssetRepresentation,
+            networkAccessPolicy: photosNetworkAccessPolicy
+        ))
         selectedFolderURL = nil
         supportedFileCountTask?.cancel()
         supportedFileCountTask = nil
@@ -287,30 +464,155 @@ struct ContentView: View {
         packageState = .initial
         contactSheetPreview.reset()
         analysisProgress = nil
-
-        guard !pickerIdentifiers.isEmpty else {
-            if case .folder = selectedAnalysisSource {
-                return
-            }
-
-            selectedAnalysisSource = nil
-            datasetState = .initial
-            analysisPhase = .ready
-            return
-        }
-
-        selectedAnalysisSource = .photosLibrary(PhotosSelection(
-            mode: .assets(localIdentifiers: pickerIdentifiers),
-            representation: photosAssetRepresentation,
-            networkAccessPolicy: photosNetworkAccessPolicy
-        ))
         datasetState = DatasetUIState(
             folderURL: nil,
-            supportedFileCount: pickerIdentifiers.count,
+            supportedFileCount: identifiers.count,
             analyzedPhotoCount: nil,
             analysisStatus: .sourceSelected
         )
         analysisPhase = .ready
+        isShowingPhotosAssetPicker = false
+    }
+
+    /// Opens the PhotoKit album picker.
+    private func choosePhotosAlbum() {
+        guard !isAnalyzing, !isCountingSupportedFiles else {
+            return
+        }
+
+        isShowingPhotosAlbumPicker = true
+        loadPhotosAlbums()
+    }
+
+    /// Uses the complete Photos Library as the active PhotoKit-backed source.
+    private func useEntirePhotosLibrary() {
+        guard !isAnalyzing, !isCountingSupportedFiles else {
+            return
+        }
+
+        let selection = PhotosSelection(
+            mode: .library,
+            representation: photosAssetRepresentation,
+            networkAccessPolicy: photosNetworkAccessPolicy
+        )
+        applyPhotoKitSelection(selection)
+    }
+
+    /// Uses a selected Photos album as the active PhotoKit-backed source.
+    private func selectPhotosAlbum(_ album: PhotosAlbumSummary) {
+        let selection = PhotosSelection(
+            mode: .album(localIdentifier: album.localIdentifier, name: album.title),
+            representation: photosAssetRepresentation,
+            networkAccessPolicy: photosNetworkAccessPolicy
+        )
+
+        isShowingPhotosAlbumPicker = false
+        applyPhotoKitSelection(selection, knownAssetCount: album.imageAssetCount)
+    }
+
+    /// Loads PhotoKit albums for the album picker sheet.
+    private func loadPhotosAlbums() {
+        guard !isLoadingPhotosAlbums else {
+            return
+        }
+
+        isLoadingPhotosAlbums = true
+        photosAlbumLoadingError = nil
+
+        Task {
+            do {
+                let albums = try await PhotosLibraryAlbumService().fetchAlbums()
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                photosAlbums = albums
+                photosAlbumLoadingError = nil
+            } catch {
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                photosAlbums = []
+                photosAlbumLoadingError = AppErrorInfo.exportFailure(error)
+            }
+
+            isLoadingPhotosAlbums = false
+        }
+    }
+
+    /// Stores a PhotoKit-backed Photos Library source and starts counting image assets.
+    private func applyPhotoKitSelection(
+        _ selection: PhotosSelection,
+        knownAssetCount: Int? = nil
+    ) {
+        selectedFolderURL = nil
+        selectedPhotoAssetIdentifiers = []
+        lastSelectedPhotoAssetIdentifier = nil
+        supportedFileCountTask?.cancel()
+        supportedFileCountTask = nil
+        isCountingSupportedFiles = false
+        statistics = nil
+        packageState = .initial
+        contactSheetPreview.reset()
+        analysisProgress = nil
+
+        selectedAnalysisSource = .photosLibrary(selection)
+        datasetState = DatasetUIState(
+            folderURL: nil,
+            supportedFileCount: knownAssetCount,
+            analyzedPhotoCount: nil,
+            analysisStatus: .sourceSelected
+        )
+        analysisPhase = knownAssetCount == 0 ? .noSupportedFiles : .ready
+
+        if knownAssetCount == nil {
+            startPhotosSelectionCount(selection)
+        }
+    }
+
+    /// Starts an asynchronous image asset count for a PhotoKit-backed Photos selection.
+    private func startPhotosSelectionCount(_ selection: PhotosSelection) {
+        supportedFileCountTask?.cancel()
+        isCountingSupportedFiles = true
+        analysisPhase = .scanningFiles
+
+        let task = Task {
+            do {
+                let count = try await PhotosLibraryCountService().countImageAssets(in: selection)
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                datasetState.supportedFileCount = count
+                datasetState.analyzedPhotoCount = nil
+                datasetState.analysisStatus = .sourceSelected
+                analysisPhase = count > 0 ? .ready : .noSupportedFiles
+            } catch {
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                datasetState.supportedFileCount = nil
+                datasetState.analyzedPhotoCount = nil
+                datasetState.analysisStatus = .failed
+                packageState = AIPackageUIState(
+                    status: .failed,
+                    packageURL: nil,
+                    metadataExists: false,
+                    statisticsExists: false,
+                    contactSheetExists: false,
+                    indexExists: false,
+                    archiveExists: false,
+                    error: AppErrorInfo.exportFailure(error)
+                )
+                analysisPhase = .failed
+            }
+
+            isCountingSupportedFiles = false
+            supportedFileCountTask = nil
+        }
+        supportedFileCountTask = task
     }
 
     /// Opens a folder picker and stores the AI package output folder.
@@ -387,10 +689,9 @@ struct ContentView: View {
                 await analyzeSelectedFolderFiles(in: source.folderURL)
             }
             analysisTask = task
-        case .photosLibrary:
-            let photoItems = selectedPhotoItems
+        case .photosLibrary(let selection):
             let task = Task {
-                await analyzeSelectedPhotos(items: photoItems)
+                await analyzePhotoKitSelection(selection)
             }
             analysisTask = task
         }
@@ -506,16 +807,16 @@ struct ContentView: View {
         }
     }
 
-    /// Materializes selected Photos Library assets and runs the file-based pipeline.
-    private func analyzeSelectedPhotos(items: [PhotosPickerItem]) async {
+    /// Materializes a PhotoKit-backed Photos Library selection and runs the file-based pipeline.
+    private func analyzePhotoKitSelection(_ selection: PhotosSelection) async {
         guard !isAnalyzing else {
             return
         }
 
         let outputFolderURL = selectedOutputFolderURL
-
+        let datasetName = selection.displayName
         let packagePaths = AIAnalysisPackagePaths(
-            datasetName: "Photos Library",
+            datasetName: datasetName,
             datasetFolderURL: FileManager.default.temporaryDirectory,
             outputFolderURL: outputFolderURL
         )
@@ -545,25 +846,12 @@ struct ContentView: View {
             error: nil
         )
 
-        var materializationResult: PhotosMaterializationResult?
-
         do {
-            let result = try await materializePhotosSelection(
-                items: items,
-                representation: photosAssetRepresentation
-            )
-            materializationResult = result
-            defer {
-                result.workspace.cleanup()
-            }
-
-            let pipelineResult = try await AnalysisPipelineService().runPreparedFiles(
-                request: PreparedAnalysisPipelineRequest(
-                    sourceFolderURL: result.workspace.directoryURL,
-                    packageDatasetName: "Photos Library",
+            let result = try await PhotosAnalysisPipelineService().run(
+                request: PhotosAnalysisPipelineRequest(
+                    selection: selection,
                     outputFolderURL: outputFolderURL,
-                    fileURLs: result.fileURLs,
-                    displayInfoByFileURL: result.displayInfoByFileURL
+                    datasetName: datasetName
                 ),
                 progressHandler: { progress in
                     Task { @MainActor in
@@ -572,25 +860,23 @@ struct ContentView: View {
                 }
             )
 
-            statistics = pipelineResult.statistics
-            datasetState.supportedFileCount = pipelineResult.supportedFileCount + result.skippedAssets.count
-            datasetState.analyzedPhotoCount = pipelineResult.analyzedPhotoCount
+            statistics = result.statistics
+            datasetState.supportedFileCount = result.supportedFileCount
+            datasetState.analyzedPhotoCount = result.analyzedPhotoCount
             datasetState.analysisStatus = .completed
             packageState = AIPackageUIState(
-                packageURL: pipelineResult.paths.packageURL,
+                packageURL: result.paths.packageURL,
                 error: AppErrorInfo.photosSkippedAssets(result.skippedAssets)
             )
             analysisPhase = .completed
-            contactSheetPreview.load(from: pipelineResult.paths.packageURL)
+            contactSheetPreview.load(from: result.paths.packageURL)
         } catch AnalysisPipelineError.noSupportedFiles {
-            materializationResult?.workspace.cleanup()
             datasetState.supportedFileCount = 0
             datasetState.analysisStatus = .sourceSelected
             packageState = .initial
             analysisPhase = .noSupportedFiles
             analysisProgress = nil
         } catch is CancellationError {
-            materializationResult?.workspace.cleanup()
             print("Photos analysis cancelled.")
             statistics = nil
             contactSheetPreview.reset()
@@ -600,32 +886,12 @@ struct ContentView: View {
             analysisPhase = .cancelled
             analysisProgress = nil
         } catch {
-            materializationResult?.workspace.cleanup()
             let appError = AppErrorInfo.exportFailure(error)
             print("Photos package export failed: \(appError.debugDescription)")
             datasetState.analysisStatus = statistics == nil ? .failed : .completedWithExportError
             packageState = AIPackageUIState(packageURL: packagePaths.packageURL, error: appError)
             analysisPhase = statistics == nil ? .failed : .exportFailed
             analysisProgress = nil
-        }
-    }
-
-    /// Runs Photos picker materialization away from the main actor.
-    private func materializePhotosSelection(
-        items: [PhotosPickerItem],
-        representation: PhotosAssetRepresentation
-    ) async throws -> PhotosMaterializationResult {
-        let task = Task.detached(priority: .utility) {
-            try await PhotosPickerItemAssetExporter().export(
-                items: items,
-                representation: representation
-            )
-        }
-
-        return try await withTaskCancellationHandler {
-            try await task.value
-        } onCancel: {
-            task.cancel()
         }
     }
 

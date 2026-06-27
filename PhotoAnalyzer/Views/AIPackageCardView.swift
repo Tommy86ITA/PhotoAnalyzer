@@ -60,11 +60,13 @@ struct AIPackageCardView: View {
                         Label("Open Package", systemImage: "folder")
                     }
                     .disabled(!canOpenPackage || isAnalyzing)
+                    .help(canOpenPackage ? "Open Generated Package Folder" : "Generate a package before opening it")
 
                     Button(action: revealArchive) {
                         Label("Reveal Archive", systemImage: "doc.zipper")
                     }
                     .disabled(!packageState.archiveExists || isAnalyzing)
+                    .help(packageState.archiveExists ? "Reveal Package Archive in Finder" : "Generate an archive before revealing it")
 
                     Spacer(minLength: 0)
                 }
