@@ -75,28 +75,12 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Metadata Cache") {
-                    Picker("Maximum size", selection: normalizedMetadataCacheLimit) {
-                        ForEach(MetadataCacheSizeLimit.allCases) { limit in
-                            Text(limit.displayName).tag(limit.rawValue)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .help("Limit disk usage for cached ExifTool metadata")
-
-                    HStack(spacing: 10) {
-                        Label(metadataCacheUsageText, systemImage: "externaldrive")
-
-                        Spacer()
-
-                        Button("Refresh", action: refreshMetadataCacheUsage)
-                            .help("Refresh Cache Usage")
-
-                        Button("Clear", action: clearMetadataCache)
-                            .disabled(metadataCacheUsage.entryCount == 0)
-                            .help("Clear Metadata Cache")
-                    }
-                }
+                MetadataCacheSettingsSection(
+                    maximumSizeMB: $metadataCacheMaximumSizeMB,
+                    usage: metadataCacheUsage,
+                    refreshUsage: refreshMetadataCacheUsage,
+                    clearCache: clearMetadataCache
+                )
             }
             .formStyle(.grouped)
             .disabled(!canEditSettings)
@@ -108,20 +92,5 @@ struct SettingsView: View {
 
     private var outputFolderText: String {
         outputFolderURL.path
-    }
-
-    private var normalizedMetadataCacheLimit: Binding<Int> {
-        Binding(
-            get: { MetadataCacheSizeLimit.normalizedRawValue(metadataCacheMaximumSizeMB) },
-            set: { metadataCacheMaximumSizeMB = MetadataCacheSizeLimit.normalizedRawValue($0) }
-        )
-    }
-
-    private var metadataCacheUsageText: String {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useKB, .useMB, .useGB]
-        formatter.countStyle = .file
-        let size = formatter.string(fromByteCount: metadataCacheUsage.byteCount)
-        return "\(size) used across \(metadataCacheUsage.entryCount) entries"
     }
 }

@@ -34,8 +34,6 @@ nonisolated final class MetadataCacheService: @unchecked Sendable {
         let argumentsFingerprint: String
     }
 
-    private static let schemaVersion = 1
-
     private let databaseQueue: DatabaseQueue?
     private let argumentsFingerprint: String
 

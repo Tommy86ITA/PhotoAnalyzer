@@ -76,9 +76,11 @@ final class FolderAnalysisService {
 		try PerformanceLogger.measure("Reading metadata / ExifTool analysis") {
 			let exifToolService = ExifToolService()
 			let metadataCacheService = MetadataCacheService()
-			let normalizedCacheLimit = MetadataCacheSizeLimit.normalizedRawValue(metadataCacheMaximumSizeMB)
-			let metadataCacheMaximumByteCount = MetadataCacheSizeLimit(rawValue: normalizedCacheLimit)?.byteCount
-				?? MetadataCacheSizeLimit.mb512.byteCount
+			let metadataReader = CachedExifMetadataReader(
+				exifToolService: exifToolService,
+				metadataCacheService: metadataCacheService,
+				maximumSizeMB: metadataCacheMaximumSizeMB
+			)
 			let photoInfoMapper = PhotoInfoMapper()
 			let processPerFileRunner: ExifToolRunner
 			var persistentRunner: PersistentExifToolRunner?
@@ -125,10 +127,8 @@ final class FolderAnalysisService {
 					try appendMetadata(
 						for: fileURL,
 						using: activeRunner,
-						exifToolService: exifToolService,
-						metadataCacheService: metadataCacheService,
+						metadataReader: metadataReader,
 						metadataCacheSourceKey: metadataCacheSourceKeyByFileURL[fileURL],
-						metadataCacheMaximumByteCount: metadataCacheMaximumByteCount,
 						photoInfoMapper: photoInfoMapper,
 						metadataCacheHitCount: &metadataCacheHitCount,
 						photos: &photos,
@@ -148,10 +148,8 @@ final class FolderAnalysisService {
 						try appendMetadata(
 							for: fileURL,
 							using: activeRunner,
-							exifToolService: exifToolService,
-							metadataCacheService: metadataCacheService,
+							metadataReader: metadataReader,
 							metadataCacheSourceKey: metadataCacheSourceKeyByFileURL[fileURL],
-							metadataCacheMaximumByteCount: metadataCacheMaximumByteCount,
 							photoInfoMapper: photoInfoMapper,
 							metadataCacheHitCount: &metadataCacheHitCount,
 							photos: &photos,
@@ -188,49 +186,30 @@ final class FolderAnalysisService {
 	private nonisolated func appendMetadata(
 		for fileURL: URL,
 		using runner: ExifToolRunner,
-		exifToolService: ExifToolService,
-		metadataCacheService: MetadataCacheService,
+		metadataReader: CachedExifMetadataReader,
 		metadataCacheSourceKey: MetadataCacheSourceKey?,
-		metadataCacheMaximumByteCount: Int64,
 		photoInfoMapper: PhotoInfoMapper,
 		metadataCacheHitCount: inout Int,
 		photos: inout [PhotoInfo],
 		exportMetadataRecords: inout [ExportPhotoMetadata],
 		analyzedFileURLs: inout [URL]
 	) throws {
-		let metadataData: Data
-		let isCacheHit: Bool
-
-		if let cachedData = metadataCacheService.cachedMetadataData(
+		guard let result = try metadataReader.readMetadata(
 			for: fileURL,
 			sourceKey: metadataCacheSourceKey,
-			maximumSizeBytes: metadataCacheMaximumByteCount
-		) {
-			metadataData = cachedData
-			isCacheHit = true
-			metadataCacheHitCount += 1
-		} else {
-			metadataData = try exifToolService.extractAnalysisMetadataData(from: fileURL, using: runner)
-			isCacheHit = false
-		}
-
-		guard let metadata = try exifToolService.decodeAnalysisMetadata(from: metadataData) else {
+			using: runner
+		) else {
 			print("No ExifTool metadata returned for \(fileURL.lastPathComponent)")
 			return
 		}
 
-		if !isCacheHit {
-			metadataCacheService.storeMetadataData(
-				metadataData,
-				for: fileURL,
-				sourceKey: metadataCacheSourceKey,
-				maximumSizeBytes: metadataCacheMaximumByteCount
-			)
+		if result.isCacheHit {
+			metadataCacheHitCount += 1
 		}
 
-		let photoInfo = photoInfoMapper.photoInfo(from: metadata, fallbackFileURL: fileURL)
+		let photoInfo = photoInfoMapper.photoInfo(from: result.metadata, fallbackFileURL: fileURL)
 		photos.append(photoInfo)
-		exportMetadataRecords.append(metadata)
+		exportMetadataRecords.append(result.metadata)
 		analyzedFileURLs.append(fileURL)
 	}
 }
