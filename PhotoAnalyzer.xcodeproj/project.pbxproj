@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		005EAEB12FE3EE9C00007A94 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 005EAEB02FE3EE9C00007A94 /* ZIPFoundation */; };
+		006C549C2FF06D2F005388BD /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 006C549B2FF06D2F005388BD /* GRDB */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -54,6 +55,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				005EAEB12FE3EE9C00007A94 /* ZIPFoundation in Frameworks */,
+				006C549C2FF06D2F005388BD /* GRDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -123,6 +125,7 @@
 			name = PhotoAnalyzer;
 			packageProductDependencies = (
 				005EAEB02FE3EE9C00007A94 /* ZIPFoundation */,
+				006C549B2FF06D2F005388BD /* GRDB */,
 			);
 			productName = PhotoAnalyzer;
 			productReference = 009875B42FE02FBB004E0A8D /* PhotoAnalyzer.app */;
@@ -158,6 +161,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				005EAEAF2FE3EE9C00007A94 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
+				006C549A2FF06D2F005388BD /* XCRemoteSwiftPackageReference "GRDB.swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 009875B52FE02FBB004E0A8D /* Products */;
@@ -539,6 +543,14 @@
 				minimumVersion = 0.9.20;
 			};
 		};
+		006C549A2FF06D2F005388BD /* XCRemoteSwiftPackageReference "GRDB.swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 7.4.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -546,6 +558,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 005EAEAF2FE3EE9C00007A94 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
 			productName = ZIPFoundation;
+		};
+		006C549B2FF06D2F005388BD /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 006C549A2FF06D2F005388BD /* XCRemoteSwiftPackageReference "GRDB.swift" */;
+			productName = GRDB;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

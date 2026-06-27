@@ -47,6 +47,9 @@ struct ContentView: View {
     /// Whether Photos Library analysis may download missing iCloud originals.
     @AppStorage("photos.downloadMissingOriginals") private var downloadMissingPhotosOriginals = false
 
+    /// Maximum disk space for cached ExifTool metadata.
+    @AppStorage("metadataCache.maximumSizeMB") private var metadataCacheMaximumSizeMB = MetadataCacheSizeLimit.mb512.rawValue
+
     /// Security-scoped bookmark for the user-selected output folder.
     @AppStorage("outputFolder.bookmark") private var outputFolderBookmarkData = Data()
 
@@ -82,6 +85,9 @@ struct ContentView: View {
 
     /// The current progress for the complete analysis pipeline.
     @State private var analysisProgress: AnalysisProgress?
+
+    /// Current on-disk metadata cache usage shown in Settings.
+    @State private var metadataCacheUsage = MetadataCacheUsage(byteCount: 0, entryCount: 0)
 
     /// Whether the dedicated settings sheet is visible.
     @State private var isShowingSettings = false
@@ -200,9 +206,13 @@ struct ContentView: View {
             SettingsView(
                 useUnmodifiedPhotosOriginals: $useUnmodifiedPhotosOriginals,
                 downloadMissingPhotosOriginals: $downloadMissingPhotosOriginals,
+                metadataCacheMaximumSizeMB: $metadataCacheMaximumSizeMB,
+                metadataCacheUsage: metadataCacheUsage,
                 outputFolderURL: selectedOutputFolderURL,
                 canEditSettings: !isAnalyzing && !isCountingSupportedFiles,
                 selectOutputFolder: selectOutputFolder,
+                refreshMetadataCacheUsage: refreshMetadataCacheUsage,
+                clearMetadataCache: clearMetadataCache,
                 dismiss: { isShowingSettings = false }
             )
         }
@@ -717,7 +727,19 @@ struct ContentView: View {
 
     /// Opens the persisted settings screen.
     private func openSettings() {
+        refreshMetadataCacheUsage()
         isShowingSettings = true
+    }
+
+    /// Refreshes the Settings summary for the metadata cache.
+    private func refreshMetadataCacheUsage() {
+        metadataCacheUsage = MetadataCacheService().usage()
+    }
+
+    /// Removes all cached metadata and refreshes the Settings summary.
+    private func clearMetadataCache() {
+        MetadataCacheService().removeAll()
+        refreshMetadataCacheUsage()
     }
 
     /// Runs folder analysis and package export for the selected folder.
@@ -766,7 +788,8 @@ struct ContentView: View {
                     folderURL: folderURL,
                     outputFolderURL: outputFolderURL,
                     includeSubfolders: shouldIncludeSubfolders,
-                    expectedSupportedFileCount: expectedSupportedFileCount
+                    expectedSupportedFileCount: expectedSupportedFileCount,
+                    metadataCacheMaximumSizeMB: metadataCacheMaximumSizeMB
                 ),
                 progressHandler: { progress in
                     Task { @MainActor in
@@ -851,7 +874,8 @@ struct ContentView: View {
                 request: PhotosAnalysisPipelineRequest(
                     selection: selection,
                     outputFolderURL: outputFolderURL,
-                    datasetName: datasetName
+                    datasetName: datasetName,
+                    metadataCacheMaximumSizeMB: metadataCacheMaximumSizeMB
                 ),
                 progressHandler: { progress in
                     Task { @MainActor in

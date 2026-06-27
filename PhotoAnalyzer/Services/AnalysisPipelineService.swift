@@ -13,6 +13,21 @@ nonisolated struct AnalysisPipelineRequest: Sendable {
     let outputFolderURL: URL?
     let includeSubfolders: Bool
     let expectedSupportedFileCount: Int?
+    let metadataCacheMaximumSizeMB: Int
+
+    init(
+        folderURL: URL,
+        outputFolderURL: URL?,
+        includeSubfolders: Bool,
+        expectedSupportedFileCount: Int?,
+        metadataCacheMaximumSizeMB: Int = MetadataCacheSizeLimit.mb512.rawValue
+    ) {
+        self.folderURL = folderURL
+        self.outputFolderURL = outputFolderURL
+        self.includeSubfolders = includeSubfolders
+        self.expectedSupportedFileCount = expectedSupportedFileCount
+        self.metadataCacheMaximumSizeMB = metadataCacheMaximumSizeMB
+    }
 }
 
 /// Input for running the processing pipeline on files that were already discovered or materialized.
@@ -22,19 +37,25 @@ nonisolated struct PreparedAnalysisPipelineRequest: Sendable {
     let outputFolderURL: URL?
     let fileURLs: [URL]
     let displayInfoByFileURL: [URL: SourceFileDisplayInfo]
+    let metadataCacheSourceKeyByFileURL: [URL: MetadataCacheSourceKey]
+    let metadataCacheMaximumSizeMB: Int
 
     init(
         sourceFolderURL: URL,
         packageDatasetName: String? = nil,
         outputFolderURL: URL?,
         fileURLs: [URL],
-        displayInfoByFileURL: [URL: SourceFileDisplayInfo] = [:]
+        displayInfoByFileURL: [URL: SourceFileDisplayInfo] = [:],
+        metadataCacheSourceKeyByFileURL: [URL: MetadataCacheSourceKey] = [:],
+        metadataCacheMaximumSizeMB: Int = MetadataCacheSizeLimit.mb512.rawValue
     ) {
         self.sourceFolderURL = sourceFolderURL
         self.packageDatasetName = packageDatasetName
         self.outputFolderURL = outputFolderURL
         self.fileURLs = fileURLs
         self.displayInfoByFileURL = displayInfoByFileURL
+        self.metadataCacheSourceKeyByFileURL = metadataCacheSourceKeyByFileURL
+        self.metadataCacheMaximumSizeMB = metadataCacheMaximumSizeMB
     }
 }
 
@@ -127,7 +148,8 @@ nonisolated struct AnalysisPipelineService: Sendable {
                 sourceFolderURL: request.folderURL,
                 packageDatasetName: request.folderURL.lastPathComponent,
                 outputFolderURL: request.outputFolderURL,
-                fileURLs: fileURLs
+                fileURLs: fileURLs,
+                metadataCacheMaximumSizeMB: request.metadataCacheMaximumSizeMB
             ),
             packagePaths: packagePaths,
             completedPipelineUnitCount: completedPipelineUnitCount,
@@ -203,6 +225,8 @@ nonisolated struct AnalysisPipelineService: Sendable {
         let folderAnalysisResult = try await runCancellableDetached {
             try await dependencies.analyzeFiles(
                 fileURLs,
+                request.metadataCacheSourceKeyByFileURL,
+                request.metadataCacheMaximumSizeMB,
                 metadataProgressHandler
             )
         }

@@ -11,9 +11,13 @@ import SwiftUI
 struct SettingsView: View {
     @Binding var useUnmodifiedPhotosOriginals: Bool
     @Binding var downloadMissingPhotosOriginals: Bool
+    @Binding var metadataCacheMaximumSizeMB: Int
+    let metadataCacheUsage: MetadataCacheUsage
     let outputFolderURL: URL
     let canEditSettings: Bool
     let selectOutputFolder: () -> Void
+    let refreshMetadataCacheUsage: () -> Void
+    let clearMetadataCache: () -> Void
     let dismiss: () -> Void
 
     var body: some View {
@@ -70,15 +74,54 @@ struct SettingsView: View {
                         }
                     }
                 }
+
+                Section("Metadata Cache") {
+                    Picker("Maximum size", selection: normalizedMetadataCacheLimit) {
+                        ForEach(MetadataCacheSizeLimit.allCases) { limit in
+                            Text(limit.displayName).tag(limit.rawValue)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .help("Limit disk usage for cached ExifTool metadata")
+
+                    HStack(spacing: 10) {
+                        Label(metadataCacheUsageText, systemImage: "externaldrive")
+
+                        Spacer()
+
+                        Button("Refresh", action: refreshMetadataCacheUsage)
+                            .help("Refresh Cache Usage")
+
+                        Button("Clear", action: clearMetadataCache)
+                            .disabled(metadataCacheUsage.entryCount == 0)
+                            .help("Clear Metadata Cache")
+                    }
+                }
             }
             .formStyle(.grouped)
             .disabled(!canEditSettings)
         }
         .padding(24)
-        .frame(width: 640, height: 400, alignment: .topLeading)
+        .frame(width: 640, height: 520, alignment: .topLeading)
+        .onAppear(perform: refreshMetadataCacheUsage)
     }
 
     private var outputFolderText: String {
         outputFolderURL.path
+    }
+
+    private var normalizedMetadataCacheLimit: Binding<Int> {
+        Binding(
+            get: { MetadataCacheSizeLimit.normalizedRawValue(metadataCacheMaximumSizeMB) },
+            set: { metadataCacheMaximumSizeMB = MetadataCacheSizeLimit.normalizedRawValue($0) }
+        )
+    }
+
+    private var metadataCacheUsageText: String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useKB, .useMB, .useGB]
+        formatter.countStyle = .file
+        let size = formatter.string(fromByteCount: metadataCacheUsage.byteCount)
+        return "\(size) used across \(metadataCacheUsage.entryCount) entries"
     }
 }

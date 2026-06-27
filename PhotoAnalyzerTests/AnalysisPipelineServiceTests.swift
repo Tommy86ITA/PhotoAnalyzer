@@ -58,7 +58,7 @@ struct AnalysisPipelineServiceTests {
                 )
                 return [fileURL]
             },
-            analyzeFiles: { fileURLs, progressHandler in
+            analyzeFiles: { fileURLs, _, _, progressHandler in
                 progressHandler?(
                     ProgressSnapshot(
                         completedUnitCount: 1,
@@ -170,7 +170,7 @@ struct AnalysisPipelineServiceTests {
                 scannedFolders.append(folderURL)
                 return []
             },
-            analyzeFiles: { fileURLs, progressHandler in
+            analyzeFiles: { fileURLs, _, _, progressHandler in
                 progressHandler?(
                     ProgressSnapshot(
                         completedUnitCount: 1,
@@ -279,7 +279,7 @@ struct AnalysisPipelineServiceTests {
         let contactSheetDisplayInfo = LockedArray<SourceFileDisplayInfo>()
         let dependencies = AnalysisPipelineDependencies(
             scanImageFiles: { _, _, _, _ in [] },
-            analyzeFiles: { fileURLs, _ in
+            analyzeFiles: { fileURLs, _, _, _ in
                 FolderAnalysisResult(photos: [photo], exportMetadata: [], fileURLs: fileURLs)
             },
             buildStatistics: { _ in statistics },

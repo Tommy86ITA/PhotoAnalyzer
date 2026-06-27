@@ -17,6 +17,7 @@ nonisolated struct MaterializedPhotosAsset: Sendable {
     let originalFilename: String?
     let fileURL: URL
     let representation: PhotosAssetRepresentation
+    let metadataCacheSourceKey: MetadataCacheSourceKey
 
     var displayInfo: SourceFileDisplayInfo {
         SourceFileDisplayInfo(
@@ -45,6 +46,10 @@ nonisolated struct PhotosMaterializationResult: Sendable {
 
     var displayInfoByFileURL: [URL: SourceFileDisplayInfo] {
         Dictionary(uniqueKeysWithValues: assets.map { ($0.fileURL, $0.displayInfo) })
+    }
+
+    var metadataCacheSourceKeyByFileURL: [URL: MetadataCacheSourceKey] {
+        Dictionary(uniqueKeysWithValues: assets.map { ($0.fileURL, $0.metadataCacheSourceKey) })
     }
 }
 
@@ -233,7 +238,12 @@ private extension PhotosLibraryAssetExporter {
                     assetLocalIdentifier: localIdentifier,
                     originalFilename: resource.originalFilename,
                     fileURL: destinationURL,
-                    representation: selection.representation
+                    representation: selection.representation,
+                    metadataCacheSourceKey: .photosAsset(
+                        localIdentifier: localIdentifier,
+                        representation: selection.representation,
+                        modificationDate: asset.modificationDate
+                    )
                 ))
             } catch {
                 try? FileManager.default.removeItem(at: destinationURL)

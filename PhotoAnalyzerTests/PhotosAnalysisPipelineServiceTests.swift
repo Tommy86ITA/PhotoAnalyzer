@@ -50,7 +50,7 @@ struct PhotosAnalysisPipelineServiceTests {
         let exportedDisplayInfo = LockedArray<SourceFileDisplayInfo>()
         let dependencies = AnalysisPipelineDependencies(
             scanImageFiles: { _, _, _, _ in [] },
-            analyzeFiles: { fileURLs, _ in
+            analyzeFiles: { fileURLs, _, _, _ in
                 FolderAnalysisResult(photos: [photo], exportMetadata: [], fileURLs: fileURLs)
             },
             buildStatistics: { _ in statistics },
@@ -85,7 +85,12 @@ struct PhotosAnalysisPipelineServiceTests {
                     assetLocalIdentifier: "asset/1",
                     originalFilename: "IMG_0001.HEIC",
                     fileURL: fileURL,
-                    representation: selection.representation
+                    representation: selection.representation,
+                    metadataCacheSourceKey: .photosAsset(
+                        localIdentifier: "asset/1",
+                        representation: selection.representation,
+                        modificationDate: nil
+                    )
                 )
                 let skipped = PhotosAssetExportFailure(
                     assetLocalIdentifier: "asset/2",
