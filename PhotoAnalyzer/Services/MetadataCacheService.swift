@@ -50,7 +50,11 @@ nonisolated final class MetadataCacheService: @unchecked Sendable {
                 at: url.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
-            let queue = try DatabaseQueue(path: url.path)
+            let queue = try DatabaseQueue(
+                path: url.path,
+                configuration: Self.databaseConfiguration()
+            )
+            try Self.configureDatabase(queue)
             try Self.migrate(queue)
             databaseQueue = queue
         } catch {
@@ -270,6 +274,19 @@ nonisolated final class MetadataCacheService: @unchecked Sendable {
             ]),
             signature: signature
         )
+    }
+
+    private static func databaseConfiguration() -> Configuration {
+        var configuration = Configuration()
+        configuration.busyMode = .timeout(5)
+        return configuration
+    }
+
+    private static func configureDatabase(_ databaseQueue: DatabaseQueue) throws {
+        try databaseQueue.writeWithoutTransaction { db in
+            _ = try String.fetchOne(db, sql: "PRAGMA journal_mode = WAL")
+            try db.execute(sql: "PRAGMA synchronous = NORMAL")
+        }
     }
 
     private static func migrate(_ databaseQueue: DatabaseQueue) throws {
