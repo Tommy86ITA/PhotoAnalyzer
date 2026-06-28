@@ -12,6 +12,7 @@ struct SettingsView: View {
     @Binding var useUnmodifiedPhotosOriginals: Bool
     @Binding var downloadMissingPhotosOriginals: Bool
     @Binding var metadataCacheMaximumSizeMB: Int
+    @Binding var exportDiagnosticReports: Bool
     let metadataCacheUsage: MetadataCacheUsage
     let outputFolderURL: URL
     let canEditSettings: Bool
@@ -81,12 +82,22 @@ struct SettingsView: View {
                     refreshUsage: refreshMetadataCacheUsage,
                     clearCache: clearMetadataCache
                 )
+
+                Section("Optional Diagnostics") {
+                    Toggle("Export quality report and diagnostic log", isOn: $exportDiagnosticReports)
+                        .help("Write optional quality_report.json and analysis_log.json files next to generated AI packages")
+
+                    Text("Writes metadata completeness counts and run diagnostics into the package folder. These files are not included in the AI package ZIP.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .formStyle(.grouped)
             .disabled(!canEditSettings)
         }
         .padding(24)
-        .frame(width: 640, height: 520, alignment: .topLeading)
+        .frame(width: 720, height: 720, alignment: .topLeading)
         .onAppear(perform: refreshMetadataCacheUsage)
     }
 

@@ -50,6 +50,9 @@ struct ContentView: View {
     /// Maximum disk space for cached ExifTool metadata.
     @AppStorage("metadataCache.maximumSizeMB") private var metadataCacheMaximumSizeMB = MetadataCacheSizeLimit.mb512.rawValue
 
+    /// Whether package exports should include optional quality and diagnostic JSON reports.
+    @AppStorage("analysis.exportDiagnosticReports") private var exportDiagnosticReports = false
+
     /// Security-scoped bookmark for the user-selected output folder.
     @AppStorage("outputFolder.bookmark") private var outputFolderBookmarkData = Data()
 
@@ -209,6 +212,7 @@ struct ContentView: View {
                 useUnmodifiedPhotosOriginals: $useUnmodifiedPhotosOriginals,
                 downloadMissingPhotosOriginals: $downloadMissingPhotosOriginals,
                 metadataCacheMaximumSizeMB: $metadataCacheMaximumSizeMB,
+                exportDiagnosticReports: $exportDiagnosticReports,
                 metadataCacheUsage: metadataCacheUsage,
                 outputFolderURL: selectedOutputFolderURL,
                 canEditSettings: !isAnalyzing && !isCountingSupportedFiles,
@@ -791,7 +795,8 @@ struct ContentView: View {
                     outputFolderURL: outputFolderURL,
                     includeSubfolders: shouldIncludeSubfolders,
                     expectedSupportedFileCount: expectedSupportedFileCount,
-                    metadataCacheMaximumSizeMB: metadataCacheMaximumSizeMB
+                    metadataCacheMaximumSizeMB: metadataCacheMaximumSizeMB,
+                    exportDiagnosticReports: exportDiagnosticReports
                 ),
                 progressHandler: { progress in
                     Task { @MainActor in
@@ -877,7 +882,8 @@ struct ContentView: View {
                     selection: selection,
                     outputFolderURL: outputFolderURL,
                     datasetName: datasetName,
-                    metadataCacheMaximumSizeMB: metadataCacheMaximumSizeMB
+                    metadataCacheMaximumSizeMB: metadataCacheMaximumSizeMB,
+                    exportDiagnosticReports: exportDiagnosticReports
                 ),
                 progressHandler: { progress in
                     Task { @MainActor in

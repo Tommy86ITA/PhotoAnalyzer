@@ -17,6 +17,21 @@ nonisolated struct FolderAnalysisResult {
 
 	/// Source image files successfully analyzed, in stable visual/export order.
 	let fileURLs: [URL]
+
+	/// Number of metadata records served from the persistent metadata cache.
+	let metadataCacheHitCount: Int
+
+	init(
+		photos: [PhotoInfo],
+		exportMetadata: [ExportPhotoMetadata],
+		fileURLs: [URL],
+		metadataCacheHitCount: Int = 0
+	) {
+		self.photos = photos
+		self.exportMetadata = exportMetadata
+		self.fileURLs = fileURLs
+		self.metadataCacheHitCount = metadataCacheHitCount
+	}
 }
 
 /// A service responsible for analyzing image files directly from a folder on disk.
@@ -178,7 +193,8 @@ final class FolderAnalysisService {
 			return FolderAnalysisResult(
 				photos: photos,
 				exportMetadata: exportMetadataRecords,
-				fileURLs: analyzedFileURLs
+				fileURLs: analyzedFileURLs,
+				metadataCacheHitCount: metadataCacheHitCount
 			)
 		}
 	}

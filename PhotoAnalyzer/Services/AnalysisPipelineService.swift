@@ -14,19 +14,22 @@ nonisolated struct AnalysisPipelineRequest: Sendable {
     let includeSubfolders: Bool
     let expectedSupportedFileCount: Int?
     let metadataCacheMaximumSizeMB: Int
+    let exportDiagnosticReports: Bool
 
     init(
         folderURL: URL,
         outputFolderURL: URL?,
         includeSubfolders: Bool,
         expectedSupportedFileCount: Int?,
-        metadataCacheMaximumSizeMB: Int = MetadataCacheSizeLimit.mb512.rawValue
+        metadataCacheMaximumSizeMB: Int = MetadataCacheSizeLimit.mb512.rawValue,
+        exportDiagnosticReports: Bool = false
     ) {
         self.folderURL = folderURL
         self.outputFolderURL = outputFolderURL
         self.includeSubfolders = includeSubfolders
         self.expectedSupportedFileCount = expectedSupportedFileCount
         self.metadataCacheMaximumSizeMB = metadataCacheMaximumSizeMB
+        self.exportDiagnosticReports = exportDiagnosticReports
     }
 }
 
@@ -39,6 +42,7 @@ nonisolated struct PreparedAnalysisPipelineRequest: Sendable {
     let displayInfoByFileURL: [URL: SourceFileDisplayInfo]
     let metadataCacheSourceKeyByFileURL: [URL: MetadataCacheSourceKey]
     let metadataCacheMaximumSizeMB: Int
+    let exportDiagnosticReports: Bool
 
     init(
         sourceFolderURL: URL,
@@ -47,7 +51,8 @@ nonisolated struct PreparedAnalysisPipelineRequest: Sendable {
         fileURLs: [URL],
         displayInfoByFileURL: [URL: SourceFileDisplayInfo] = [:],
         metadataCacheSourceKeyByFileURL: [URL: MetadataCacheSourceKey] = [:],
-        metadataCacheMaximumSizeMB: Int = MetadataCacheSizeLimit.mb512.rawValue
+        metadataCacheMaximumSizeMB: Int = MetadataCacheSizeLimit.mb512.rawValue,
+        exportDiagnosticReports: Bool = false
     ) {
         self.sourceFolderURL = sourceFolderURL
         self.packageDatasetName = packageDatasetName
@@ -56,6 +61,7 @@ nonisolated struct PreparedAnalysisPipelineRequest: Sendable {
         self.displayInfoByFileURL = displayInfoByFileURL
         self.metadataCacheSourceKeyByFileURL = metadataCacheSourceKeyByFileURL
         self.metadataCacheMaximumSizeMB = metadataCacheMaximumSizeMB
+        self.exportDiagnosticReports = exportDiagnosticReports
     }
 }
 
@@ -149,7 +155,8 @@ nonisolated struct AnalysisPipelineService: Sendable {
                 packageDatasetName: request.folderURL.lastPathComponent,
                 outputFolderURL: request.outputFolderURL,
                 fileURLs: fileURLs,
-                metadataCacheMaximumSizeMB: request.metadataCacheMaximumSizeMB
+                metadataCacheMaximumSizeMB: request.metadataCacheMaximumSizeMB,
+                exportDiagnosticReports: request.exportDiagnosticReports
             ),
             packagePaths: packagePaths,
             completedPipelineUnitCount: completedPipelineUnitCount,
@@ -335,6 +342,32 @@ nonisolated struct AnalysisPipelineService: Sendable {
             )
         }
         try Task.checkCancellation()
+
+        if request.exportDiagnosticReports {
+            let generatedAt = Date()
+            let qualityReport = DatasetQualityReportService().makeReport(
+                photos: folderAnalysisResult.photos,
+                exportMetadata: folderAnalysisResult.exportMetadata,
+                sourceFileURLs: folderAnalysisResult.fileURLs,
+                displayInfoByFileURL: request.displayInfoByFileURL,
+                generatedAt: generatedAt
+            )
+            let diagnosticLog = AnalysisDiagnosticLogService().makeLog(
+                sourceFolderURL: request.sourceFolderURL,
+                paths: paths,
+                supportedFileCount: fileURLs.count,
+                analyzedPhotoCount: folderAnalysisResult.photos.count,
+                metadataRecordCount: folderAnalysisResult.exportMetadata.count,
+                metadataCacheMaximumSizeMB: request.metadataCacheMaximumSizeMB,
+                metadataCacheHitCount: folderAnalysisResult.metadataCacheHitCount,
+                generatedAt: generatedAt
+            )
+            try DiagnosticReportExporter().export(
+                qualityReport: qualityReport,
+                diagnosticLog: diagnosticLog,
+                paths: paths
+            )
+        }
 
         progressHandler?(AnalysisProgress(fractionCompleted: 1, message: "Package generated", phase: .completed))
 
