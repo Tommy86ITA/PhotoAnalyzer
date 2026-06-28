@@ -156,8 +156,10 @@ struct ContentView: View {
                             AIPackageCardView(
                                 packageState: packageState,
                                 isAnalyzing: isAnalyzing,
+                                canOpenContactSheet: contactSheetPreview.canOpenViewer,
                                 openPackage: openPackage,
-                                revealArchive: revealArchive
+                                revealArchive: revealArchive,
+                                openContactSheet: openContactSheetViewer
                             )
 
                             DatasetOverviewView(statistics: statistics)

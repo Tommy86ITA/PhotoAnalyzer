@@ -11,8 +11,10 @@ import SwiftUI
 struct AIPackageCardView: View {
     let packageState: AIPackageUIState
     let isAnalyzing: Bool
+    let canOpenContactSheet: Bool
     let openPackage: () -> Void
     let revealArchive: () -> Void
+    let openContactSheet: () -> Void
 
     private var canOpenPackage: Bool {
         guard let packageURL = packageState.packageURL else {
@@ -36,6 +38,16 @@ struct AIPackageCardView: View {
                     packagePathText: packageState.packagePathText
                 )
 
+                PackageActionRow(
+                    canOpenPackage: canOpenPackage,
+                    canRevealArchive: packageState.archiveExists,
+                    canOpenContactSheet: canOpenContactSheet,
+                    isAnalyzing: isAnalyzing,
+                    openPackage: openPackage,
+                    revealArchive: revealArchive,
+                    openContactSheet: openContactSheet
+                )
+
                 VStack(spacing: 8) {
                     PackageFileRow(fileName: AIAnalysisPackagePaths.metadataFileName, exists: packageState.metadataExists)
                     PackageFileRow(fileName: AIAnalysisPackagePaths.statisticsFileName, exists: packageState.statisticsExists)
@@ -53,22 +65,6 @@ struct AIPackageCardView: View {
                         .truncationMode(.tail)
                         .textSelection(.enabled)
                         .help(error.debugDescription)
-                }
-
-                HStack(spacing: 10) {
-                    Button(action: openPackage) {
-                        Label("Open Package", systemImage: "folder")
-                    }
-                    .disabled(!canOpenPackage || isAnalyzing)
-                    .help(canOpenPackage ? "Open Generated Package Folder" : "Generate a package before opening it")
-
-                    Button(action: revealArchive) {
-                        Label("Reveal Archive", systemImage: "doc.zipper")
-                    }
-                    .disabled(!packageState.archiveExists || isAnalyzing)
-                    .help(packageState.archiveExists ? "Reveal Package Archive in Finder" : "Generate an archive before revealing it")
-
-                    Spacer(minLength: 0)
                 }
             }
             .padding(.vertical, 6)
@@ -94,6 +90,48 @@ struct AIPackageCardView: View {
         }
 
         return "\(packageURL.lastPathComponent).zip"
+    }
+}
+
+private struct PackageActionRow: View {
+    let canOpenPackage: Bool
+    let canRevealArchive: Bool
+    let canOpenContactSheet: Bool
+    let isAnalyzing: Bool
+    let openPackage: () -> Void
+    let revealArchive: () -> Void
+    let openContactSheet: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button(action: openPackage) {
+                Label("Open Package Folder", systemImage: "folder")
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity)
+            }
+            .disabled(!canOpenPackage || isAnalyzing)
+            .help(canOpenPackage ? "Open Generated Package Folder" : "Generate a package before opening it")
+            .frame(maxWidth: .infinity)
+
+            Button(action: revealArchive) {
+                Label("Reveal Archive", systemImage: "doc.zipper")
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity)
+            }
+            .disabled(!canRevealArchive || isAnalyzing)
+            .help(canRevealArchive ? "Reveal Package Archive in Finder" : "Generate an archive before revealing it")
+            .frame(maxWidth: .infinity)
+
+            Button(action: openContactSheet) {
+                Label("Open Contact Sheet", systemImage: "photo.on.rectangle.angled")
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity)
+            }
+            .disabled(!canOpenContactSheet || isAnalyzing)
+            .help(canOpenContactSheet ? "Open Contact Sheet Viewer" : "Generate a contact sheet before opening it")
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.top, 2)
     }
 }
 
