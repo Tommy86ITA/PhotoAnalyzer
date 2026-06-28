@@ -12,6 +12,8 @@ nonisolated struct AIAnalysisPackagePaths {
     static let folderName = "PhotoAnalyzer_AI_Package"
     static let metadataFileName = "metadata.json"
     static let statisticsFileName = "statistics.json"
+    static let qualityReportFileName = "quality_report.json"
+    static let analysisLogFileName = "analysis_log.json"
     static let contactSheetFileName = "contact_sheet.jpg"
     static let indexFileName = "index.tsv"
 
@@ -56,6 +58,14 @@ nonisolated struct AIAnalysisPackagePaths {
 
     var statisticsURL: URL {
         packageURL.appendingPathComponent(Self.statisticsFileName)
+    }
+
+    var qualityReportURL: URL {
+        packageURL.appendingPathComponent(Self.qualityReportFileName)
+    }
+
+    var analysisLogURL: URL {
+        packageURL.appendingPathComponent(Self.analysisLogFileName)
     }
 
     var contactSheetURL: URL {

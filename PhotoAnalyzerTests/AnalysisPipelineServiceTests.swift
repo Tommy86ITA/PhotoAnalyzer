@@ -127,6 +127,80 @@ struct AnalysisPipelineServiceTests {
         #expect(progressRecorder.values.last == .completed)
     }
 
+    @Test func runPreparedFilesExportsOptionalDiagnosticReports() async throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: directoryURL)
+        }
+
+        let fileURL = directoryURL.appendingPathComponent("diagnostic.jpg")
+        let photo = PhotoInfo(
+            fileName: "diagnostic.jpg",
+            captureDate: nil,
+            cameraMake: nil,
+            cameraModel: nil,
+            lensModel: nil,
+            focalLength: nil,
+            focalLength35mmEquivalent: nil,
+            iso: nil,
+            aperture: nil,
+            exposureTime: nil,
+            latitude: nil,
+            longitude: nil,
+            photoType: .standard
+        )
+        let statistics = PhotoStatistics(
+            totalPhotos: 1,
+            photosByType: [.standard: 1],
+            photosByCamera: [:],
+            isoDistribution: [:],
+            focalLength35mmDistribution: [:],
+            apertureDistribution: [:],
+            shutterSpeedDistribution: [:],
+            lensDistribution: [:],
+            averageISO: nil,
+            averageFocalLength35mmEquivalent: nil
+        )
+        let dependencies = AnalysisPipelineDependencies(
+            scanImageFiles: { _, _, _, _ in [] },
+            analyzeFiles: { fileURLs, _, _, _ in
+                FolderAnalysisResult(
+                    photos: [photo],
+                    exportMetadata: [],
+                    fileURLs: fileURLs,
+                    metadataCacheHitCount: 1
+                )
+            },
+            buildStatistics: { _ in statistics },
+            exportDataFiles: { _, _, _, _, paths, _, _ in
+                try FileManager.default.createDirectory(at: paths.packageURL, withIntermediateDirectories: true)
+                return paths
+            },
+            exportContactSheet: { _, _, _, _, _ in },
+            archivePackage: { paths, _ in
+                #expect(!FileManager.default.fileExists(atPath: paths.qualityReportURL.path))
+                #expect(!FileManager.default.fileExists(atPath: paths.analysisLogURL.path))
+                return paths.archiveURL
+            }
+        )
+
+        let result = try await AnalysisPipelineService(dependencies: dependencies).runPreparedFiles(
+            request: PreparedAnalysisPipelineRequest(
+                sourceFolderURL: directoryURL,
+                outputFolderURL: nil,
+                fileURLs: [fileURL],
+                metadataCacheMaximumSizeMB: 512,
+                exportDiagnosticReports: true
+            ),
+            progressHandler: nil
+        )
+
+        #expect(FileManager.default.fileExists(atPath: result.paths.qualityReportURL.path))
+        #expect(FileManager.default.fileExists(atPath: result.paths.analysisLogURL.path))
+    }
+
     @Test func runPreparedFilesBypassesFolderScanning() async throws {
         let directoryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
