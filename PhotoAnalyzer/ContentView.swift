@@ -23,17 +23,8 @@ struct ContentView: View {
         static let windowMinimumHeight: CGFloat = 820
     }
 
-    /// The security-scoped folder URL selected by the user.
-    @State private var selectedFolderURL: URL?
-
-    /// The currently selected analysis source.
-    @State private var selectedAnalysisSource: AnalysisSource?
-
-    /// Selected PhotoKit asset identifiers used to build a manual Photos Library source.
-    @State private var selectedPhotoAssetIdentifiers = Set<String>()
-
-    /// Last manually selected PhotoKit asset, used as the anchor for shift-selection.
-    @State private var lastSelectedPhotoAssetIdentifier: String?
+    /// Runtime state and task coordination for the analysis workflow.
+    @State private var coordinator = AnalysisCoordinator()
 
     /// Security-scoped output folder for generated AI packages.
     @State private var selectedOutputFolderURL = DefaultOutputFolderProvider.defaultOutputFolderURL()
@@ -56,38 +47,8 @@ struct ContentView: View {
     /// Security-scoped bookmark for the user-selected output folder.
     @AppStorage("outputFolder.bookmark") private var outputFolderBookmarkData = Data()
 
-    /// User-facing state for the selected dataset.
-    @State private var datasetState = DatasetUIState.initial
-
-    /// User-facing state for the latest AI package export.
-    @State private var packageState = AIPackageUIState.initial
-
-    /// The latest statistics computed from the analyzed photos.
-    @State private var statistics: PhotoStatistics?
-
-    /// Contact sheet page browsing state for the latest package export.
-    @State private var contactSheetPreview = ContactSheetPreviewState()
-
     /// Presenter that owns the dedicated contact sheet viewer window.
     @State private var contactSheetViewerPresenter = ContactSheetViewerPresenter()
-
-    /// Whether a folder analysis is currently running.
-    @State private var isAnalyzing = false
-
-    /// Whether the selected folder is currently being scanned for supported files.
-    @State private var isCountingSupportedFiles = false
-
-    /// The currently running analysis task, if any.
-    @State private var analysisTask: Task<Void, Never>?
-
-    /// The currently running supported file count task, if any.
-    @State private var supportedFileCountTask: Task<Void, Never>?
-
-    /// The current operation phase shown at the bottom of the interface.
-    @State private var analysisPhase: AnalysisPhase = .ready
-
-    /// The current progress for the complete analysis pipeline.
-    @State private var analysisProgress: AnalysisProgress?
 
     /// Current on-disk metadata cache usage shown in Settings.
     @State private var metadataCacheUsage = MetadataCacheUsage(byteCount: 0, entryCount: 0)
@@ -101,24 +62,6 @@ struct ContentView: View {
     /// Whether the PhotoKit asset picker sheet is visible.
     @State private var isShowingPhotosAssetPicker = false
 
-    /// Image assets available for manual PhotoKit-backed Photos selection.
-    @State private var photosAssets: [PhotosAssetSummary] = []
-
-    /// Whether Photos assets are currently loading.
-    @State private var isLoadingPhotosAssets = false
-
-    /// Asset loading error shown in the asset picker sheet.
-    @State private var photosAssetLoadingError: AppErrorInfo?
-
-    /// Albums available for PhotoKit-backed Photos selection.
-    @State private var photosAlbums: [PhotosAlbumSummary] = []
-
-    /// Whether Photos albums are currently loading.
-    @State private var isLoadingPhotosAlbums = false
-
-    /// Album loading error shown in the album picker sheet.
-    @State private var photosAlbumLoadingError: AppErrorInfo?
-
     /// The view hierarchy for the PhotoAnalyzer interface.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -126,15 +69,15 @@ struct ContentView: View {
                 AppHeaderView()
 
                 DatasetActionView(
-                    datasetState: datasetState,
+                    datasetState: coordinator.datasetState,
                     sourceIconName: sourceIconName,
                     sourceText: sourceText,
                     sourcePath: sourcePath,
-                    isSourcePlaceholder: selectedAnalysisSource == nil,
+                    isSourcePlaceholder: coordinator.selectedAnalysisSource == nil,
                     isFolderSource: isFolderSource,
                     canAnalyze: canAnalyzeSelectedSource,
-                    isAnalyzing: isAnalyzing,
-                    isCountingSupportedFiles: isCountingSupportedFiles,
+                    isAnalyzing: coordinator.isAnalyzing,
+                    isCountingSupportedFiles: coordinator.isCountingSupportedFiles,
                     useUnmodifiedPhotosOriginals: useUnmodifiedPhotosOriginals,
                     downloadMissingPhotosOriginals: downloadMissingPhotosOriginals,
                     includeSubfolders: $includeSubfolders,
@@ -148,8 +91,8 @@ struct ContentView: View {
                 )
 
                 StatusFooterView(
-                    statusMessage: analysisPhase.displayText,
-                    isBusy: isAnalyzing || isCountingSupportedFiles,
+                    statusMessage: coordinator.analysisPhase.displayText,
+                    isBusy: coordinator.isAnalyzing || coordinator.isCountingSupportedFiles,
                     progress: footerProgress
                 )
 
@@ -157,25 +100,25 @@ struct ContentView: View {
                     HStack(alignment: .top, spacing: Layout.dashboardSpacing) {
                         VStack(spacing: Layout.mainColumnSpacing) {
                             AIPackageCardView(
-                                packageState: packageState,
-                                isAnalyzing: isAnalyzing,
-                                canOpenContactSheet: contactSheetPreview.canOpenViewer,
+                                packageState: coordinator.packageState,
+                                isAnalyzing: coordinator.isAnalyzing,
+                                canOpenContactSheet: coordinator.contactSheetPreview.canOpenViewer,
                                 openPackage: openPackage,
                                 revealArchive: revealArchive,
                                 openContactSheet: openContactSheetViewer
                             )
 
-                            DatasetOverviewView(statistics: statistics)
+                            DatasetOverviewView(statistics: coordinator.statistics)
                         }
                         .frame(maxWidth: .infinity, maxHeight: proxy.size.height, alignment: .top)
 
                         ContactSheetPreviewView(
-                            image: contactSheetPreview.image,
-                            packageStatus: packageState.status,
-                            currentPageIndex: contactSheetPreview.currentPageIndex,
-                            pageCount: contactSheetPreview.pageCount,
-                            previousPage: { contactSheetPreview.showPreviousPage() },
-                            nextPage: { contactSheetPreview.showNextPage() },
+                            image: coordinator.contactSheetPreview.image,
+                            packageStatus: coordinator.packageState.status,
+                            currentPageIndex: coordinator.contactSheetPreview.currentPageIndex,
+                            pageCount: coordinator.contactSheetPreview.pageCount,
+                            previousPage: { coordinator.contactSheetPreview.showPreviousPage() },
+                            nextPage: { coordinator.contactSheetPreview.showNextPage() },
                             openViewer: openContactSheetViewer
                         )
                         .frame(maxWidth: .infinity, maxHeight: proxy.size.height, alignment: .top)
@@ -215,7 +158,7 @@ struct ContentView: View {
                 exportDiagnosticReports: $exportDiagnosticReports,
                 metadataCacheUsage: metadataCacheUsage,
                 outputFolderURL: selectedOutputFolderURL,
-                canEditSettings: !isAnalyzing && !isCountingSupportedFiles,
+                canEditSettings: !coordinator.isAnalyzing && !coordinator.isCountingSupportedFiles,
                 selectOutputFolder: selectOutputFolder,
                 refreshMetadataCacheUsage: refreshMetadataCacheUsage,
                 clearMetadataCache: clearMetadataCache,
@@ -224,9 +167,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $isShowingPhotosAlbumPicker) {
             PhotosAlbumPickerView(
-                albums: photosAlbums,
-                isLoading: isLoadingPhotosAlbums,
-                error: photosAlbumLoadingError,
+                albums: coordinator.photosAlbums,
+                isLoading: coordinator.isLoadingPhotosAlbums,
+                error: coordinator.photosAlbumLoadingError,
                 selectAlbum: selectPhotosAlbum,
                 refresh: loadPhotosAlbums,
                 dismiss: { isShowingPhotosAlbumPicker = false }
@@ -234,10 +177,10 @@ struct ContentView: View {
         }
         .sheet(isPresented: $isShowingPhotosAssetPicker) {
             PhotosAssetPickerView(
-                assets: photosAssets,
-                isLoading: isLoadingPhotosAssets,
-                error: photosAssetLoadingError,
-                selectedAssetIdentifiers: selectedPhotoAssetIdentifiers,
+                assets: coordinator.photosAssets,
+                isLoading: coordinator.isLoadingPhotosAssets,
+                error: coordinator.photosAssetLoadingError,
+                selectedAssetIdentifiers: coordinator.selectedPhotoAssetIdentifiers,
                 toggleAsset: toggleSelectedPhotoAsset,
                 selectAssets: selectPhotoAssets,
                 clearSelection: clearSelectedPhotoAssets,
@@ -255,7 +198,7 @@ struct ContentView: View {
     }
 
     private var sourceIconName: String {
-        switch selectedAnalysisSource {
+        switch coordinator.selectedAnalysisSource {
         case .folder:
             "folder.fill"
         case .photosLibrary:
@@ -266,25 +209,25 @@ struct ContentView: View {
     }
 
     private var sourceText: String {
-        selectedAnalysisSource?.displayName ?? "No source selected"
+        coordinator.selectedAnalysisSource?.displayName ?? "No source selected"
     }
 
     private var sourcePath: String? {
-        guard case .folder(let source) = selectedAnalysisSource else {
+        guard case .folder(let source) = coordinator.selectedAnalysisSource else {
             return nil
         }
         return source.folderURL.path
     }
 
     private var canAnalyzeSelectedSource: Bool {
-        guard selectedAnalysisSource != nil else {
+        guard coordinator.selectedAnalysisSource != nil else {
             return false
         }
-        return (datasetState.supportedFileCount ?? 0) > 0
+        return (coordinator.datasetState.supportedFileCount ?? 0) > 0
     }
 
     private var isFolderSource: Bool {
-        if case .folder = selectedAnalysisSource {
+        if case .folder = coordinator.selectedAnalysisSource {
             return true
         }
 
@@ -300,20 +243,20 @@ struct ContentView: View {
     }
 
     private var footerProgress: AnalysisProgress? {
-        if let analysisProgress {
+        if let analysisProgress = coordinator.analysisProgress {
             return analysisProgress
         }
 
-        guard isAnalyzing || isCountingSupportedFiles else {
+        guard coordinator.isAnalyzing || coordinator.isCountingSupportedFiles else {
             return nil
         }
 
-        return AnalysisProgress(fractionCompleted: 0, message: analysisPhase.displayText)
+        return AnalysisProgress(fractionCompleted: 0, message: coordinator.analysisPhase.displayText)
     }
 
     /// Opens a folder picker and stores the selected folder path.
     private func selectFolder() {
-        guard !isAnalyzing, !isCountingSupportedFiles else {
+        guard !coordinator.isAnalyzing, !coordinator.isCountingSupportedFiles else {
             return
         }
 
@@ -321,19 +264,19 @@ struct ContentView: View {
             return
         }
 
-        selectedFolderURL = url
-        selectedAnalysisSource = .folder(FolderAnalysisSource(
+        coordinator.selectedFolderURL = url
+        coordinator.selectedAnalysisSource = .folder(FolderAnalysisSource(
             folderURL: url,
             includeSubfolders: includeSubfolders
         ))
-        selectedPhotoAssetIdentifiers = []
-        lastSelectedPhotoAssetIdentifier = nil
-        statistics = nil
-        packageState = .initial
-        contactSheetPreview.reset()
-        analysisProgress = nil
+        coordinator.selectedPhotoAssetIdentifiers = []
+        coordinator.lastSelectedPhotoAssetIdentifier = nil
+        coordinator.statistics = nil
+        coordinator.packageState = .initial
+        coordinator.contactSheetPreview.reset()
+        coordinator.analysisProgress = nil
 
-        datasetState = DatasetUIState(
+        coordinator.datasetState = DatasetUIState(
             folderURL: url,
             supportedFileCount: nil,
             analyzedPhotoCount: nil,
@@ -344,7 +287,7 @@ struct ContentView: View {
 
     /// Opens the PhotoKit asset picker.
     private func choosePhotosAssets() {
-        guard !isAnalyzing, !isCountingSupportedFiles else {
+        guard !coordinator.isAnalyzing, !coordinator.isCountingSupportedFiles else {
             return
         }
 
@@ -354,16 +297,16 @@ struct ContentView: View {
 
     /// Loads PhotoKit assets for the manual Photos picker sheet.
     private func loadPhotosAssets() {
-        guard !isLoadingPhotosAssets else {
+        guard !coordinator.isLoadingPhotosAssets else {
             return
         }
 
-        isLoadingPhotosAssets = true
-        photosAssetLoadingError = nil
+        coordinator.isLoadingPhotosAssets = true
+        coordinator.photosAssetLoadingError = nil
 
         Task {
             defer {
-                isLoadingPhotosAssets = false
+                coordinator.isLoadingPhotosAssets = false
             }
 
             do {
@@ -372,15 +315,15 @@ struct ContentView: View {
                     return
                 }
 
-                photosAssets = assets
-                photosAssetLoadingError = nil
+                coordinator.photosAssets = assets
+                coordinator.photosAssetLoadingError = nil
             } catch {
                 guard !Task.isCancelled else {
                     return
                 }
 
-                photosAssets = []
-                photosAssetLoadingError = AppErrorInfo.exportFailure(error)
+                coordinator.photosAssets = []
+                coordinator.photosAssetLoadingError = AppErrorInfo.exportFailure(error)
             }
         }
     }
@@ -408,18 +351,18 @@ struct ContentView: View {
         } else if isCommandSelection {
             togglePhotoAsset(asset)
         } else {
-            selectedPhotoAssetIdentifiers = [asset.localIdentifier]
-            lastSelectedPhotoAssetIdentifier = asset.localIdentifier
+            coordinator.selectedPhotoAssetIdentifiers = [asset.localIdentifier]
+            coordinator.lastSelectedPhotoAssetIdentifier = asset.localIdentifier
         }
     }
 
     /// Toggles an asset while preserving the rest of the selection.
     private func togglePhotoAsset(_ asset: PhotosAssetSummary) {
-        if selectedPhotoAssetIdentifiers.contains(asset.localIdentifier) {
-            selectedPhotoAssetIdentifiers.remove(asset.localIdentifier)
+        if coordinator.selectedPhotoAssetIdentifiers.contains(asset.localIdentifier) {
+            coordinator.selectedPhotoAssetIdentifiers.remove(asset.localIdentifier)
         } else {
-            selectedPhotoAssetIdentifiers.insert(asset.localIdentifier)
-            lastSelectedPhotoAssetIdentifier = asset.localIdentifier
+            coordinator.selectedPhotoAssetIdentifiers.insert(asset.localIdentifier)
+            coordinator.lastSelectedPhotoAssetIdentifier = asset.localIdentifier
         }
     }
 
@@ -429,11 +372,11 @@ struct ContentView: View {
         in orderedAssets: [PhotosAssetSummary],
         extendsExistingSelection: Bool
     ) {
-        guard let anchorIdentifier = lastSelectedPhotoAssetIdentifier,
+        guard let anchorIdentifier = coordinator.lastSelectedPhotoAssetIdentifier,
               let anchorIndex = orderedAssets.firstIndex(where: { $0.localIdentifier == anchorIdentifier }),
               let currentIndex = orderedAssets.firstIndex(of: asset) else {
-            selectedPhotoAssetIdentifiers = [asset.localIdentifier]
-            lastSelectedPhotoAssetIdentifier = asset.localIdentifier
+            coordinator.selectedPhotoAssetIdentifiers = [asset.localIdentifier]
+            coordinator.lastSelectedPhotoAssetIdentifier = asset.localIdentifier
             return
         }
 
@@ -441,60 +384,60 @@ struct ContentView: View {
         let rangeIdentifiers = Set(orderedAssets[bounds].map(\.localIdentifier))
 
         if extendsExistingSelection {
-            selectedPhotoAssetIdentifiers.formUnion(rangeIdentifiers)
+            coordinator.selectedPhotoAssetIdentifiers.formUnion(rangeIdentifiers)
         } else {
-            selectedPhotoAssetIdentifiers = rangeIdentifiers
+            coordinator.selectedPhotoAssetIdentifiers = rangeIdentifiers
         }
     }
 
     /// Selects the provided PhotoKit assets in the manual Photos selection sheet.
     private func selectPhotoAssets(_ assets: [PhotosAssetSummary]) {
-        selectedPhotoAssetIdentifiers = Set(assets.map(\.localIdentifier))
-        lastSelectedPhotoAssetIdentifier = assets.last?.localIdentifier
+        coordinator.selectedPhotoAssetIdentifiers = Set(assets.map(\.localIdentifier))
+        coordinator.lastSelectedPhotoAssetIdentifier = assets.last?.localIdentifier
     }
 
     /// Clears the manual PhotoKit asset selection.
     private func clearSelectedPhotoAssets() {
-        selectedPhotoAssetIdentifiers = []
-        lastSelectedPhotoAssetIdentifier = nil
+        coordinator.selectedPhotoAssetIdentifiers = []
+        coordinator.lastSelectedPhotoAssetIdentifier = nil
     }
 
     /// Stores manually selected PhotoKit assets as the active Photos source.
     private func confirmSelectedPhotosAssets() {
-        guard !selectedPhotoAssetIdentifiers.isEmpty else {
+        guard !coordinator.selectedPhotoAssetIdentifiers.isEmpty else {
             return
         }
 
-        let identifiers = photosAssets
+        let identifiers = coordinator.photosAssets
             .map(\.localIdentifier)
-            .filter { selectedPhotoAssetIdentifiers.contains($0) }
+            .filter { coordinator.selectedPhotoAssetIdentifiers.contains($0) }
 
-        selectedAnalysisSource = .photosLibrary(PhotosSelection(
+        coordinator.selectedAnalysisSource = .photosLibrary(PhotosSelection(
             mode: .assets(localIdentifiers: identifiers),
             representation: photosAssetRepresentation,
             networkAccessPolicy: photosNetworkAccessPolicy
         ))
-        selectedFolderURL = nil
-        supportedFileCountTask?.cancel()
-        supportedFileCountTask = nil
-        isCountingSupportedFiles = false
-        statistics = nil
-        packageState = .initial
-        contactSheetPreview.reset()
-        analysisProgress = nil
-        datasetState = DatasetUIState(
+        coordinator.selectedFolderURL = nil
+        coordinator.supportedFileCountTask?.cancel()
+        coordinator.supportedFileCountTask = nil
+        coordinator.isCountingSupportedFiles = false
+        coordinator.statistics = nil
+        coordinator.packageState = .initial
+        coordinator.contactSheetPreview.reset()
+        coordinator.analysisProgress = nil
+        coordinator.datasetState = DatasetUIState(
             folderURL: nil,
             supportedFileCount: identifiers.count,
             analyzedPhotoCount: nil,
             analysisStatus: .sourceSelected
         )
-        analysisPhase = .ready
+        coordinator.analysisPhase = .ready
         isShowingPhotosAssetPicker = false
     }
 
     /// Opens the PhotoKit album picker.
     private func choosePhotosAlbum() {
-        guard !isAnalyzing, !isCountingSupportedFiles else {
+        guard !coordinator.isAnalyzing, !coordinator.isCountingSupportedFiles else {
             return
         }
 
@@ -504,7 +447,7 @@ struct ContentView: View {
 
     /// Uses the complete Photos Library as the active PhotoKit-backed source.
     private func useEntirePhotosLibrary() {
-        guard !isAnalyzing, !isCountingSupportedFiles else {
+        guard !coordinator.isAnalyzing, !coordinator.isCountingSupportedFiles else {
             return
         }
 
@@ -530,16 +473,16 @@ struct ContentView: View {
 
     /// Loads PhotoKit albums for the album picker sheet.
     private func loadPhotosAlbums() {
-        guard !isLoadingPhotosAlbums else {
+        guard !coordinator.isLoadingPhotosAlbums else {
             return
         }
 
-        isLoadingPhotosAlbums = true
-        photosAlbumLoadingError = nil
+        coordinator.isLoadingPhotosAlbums = true
+        coordinator.photosAlbumLoadingError = nil
 
         Task {
             defer {
-                isLoadingPhotosAlbums = false
+                coordinator.isLoadingPhotosAlbums = false
             }
 
             do {
@@ -548,15 +491,15 @@ struct ContentView: View {
                     return
                 }
 
-                photosAlbums = albums
-                photosAlbumLoadingError = nil
+                coordinator.photosAlbums = albums
+                coordinator.photosAlbumLoadingError = nil
             } catch {
                 guard !Task.isCancelled else {
                     return
                 }
 
-                photosAlbums = []
-                photosAlbumLoadingError = AppErrorInfo.exportFailure(error)
+                coordinator.photosAlbums = []
+                coordinator.photosAlbumLoadingError = AppErrorInfo.exportFailure(error)
             }
         }
     }
@@ -566,25 +509,25 @@ struct ContentView: View {
         _ selection: PhotosSelection,
         knownAssetCount: Int? = nil
     ) {
-        selectedFolderURL = nil
-        selectedPhotoAssetIdentifiers = []
-        lastSelectedPhotoAssetIdentifier = nil
-        supportedFileCountTask?.cancel()
-        supportedFileCountTask = nil
-        isCountingSupportedFiles = false
-        statistics = nil
-        packageState = .initial
-        contactSheetPreview.reset()
-        analysisProgress = nil
+        coordinator.selectedFolderURL = nil
+        coordinator.selectedPhotoAssetIdentifiers = []
+        coordinator.lastSelectedPhotoAssetIdentifier = nil
+        coordinator.supportedFileCountTask?.cancel()
+        coordinator.supportedFileCountTask = nil
+        coordinator.isCountingSupportedFiles = false
+        coordinator.statistics = nil
+        coordinator.packageState = .initial
+        coordinator.contactSheetPreview.reset()
+        coordinator.analysisProgress = nil
 
-        selectedAnalysisSource = .photosLibrary(selection)
-        datasetState = DatasetUIState(
+        coordinator.selectedAnalysisSource = .photosLibrary(selection)
+        coordinator.datasetState = DatasetUIState(
             folderURL: nil,
             supportedFileCount: knownAssetCount,
             analyzedPhotoCount: nil,
             analysisStatus: .sourceSelected
         )
-        analysisPhase = knownAssetCount == 0 ? .noSupportedFiles : .ready
+        coordinator.analysisPhase = knownAssetCount == 0 ? .noSupportedFiles : .ready
 
         if knownAssetCount == nil {
             startPhotosSelectionCount(selection)
@@ -593,9 +536,9 @@ struct ContentView: View {
 
     /// Starts an asynchronous image asset count for a PhotoKit-backed Photos selection.
     private func startPhotosSelectionCount(_ selection: PhotosSelection) {
-        supportedFileCountTask?.cancel()
-        isCountingSupportedFiles = true
-        analysisPhase = .scanningFiles
+        coordinator.supportedFileCountTask?.cancel()
+        coordinator.isCountingSupportedFiles = true
+        coordinator.analysisPhase = .scanningFiles
 
         let task = Task {
             do {
@@ -604,19 +547,19 @@ struct ContentView: View {
                     return
                 }
 
-                datasetState.supportedFileCount = count
-                datasetState.analyzedPhotoCount = nil
-                datasetState.analysisStatus = .sourceSelected
-                analysisPhase = count > 0 ? .ready : .noSupportedFiles
+                coordinator.datasetState.supportedFileCount = count
+                coordinator.datasetState.analyzedPhotoCount = nil
+                coordinator.datasetState.analysisStatus = .sourceSelected
+                coordinator.analysisPhase = count > 0 ? .ready : .noSupportedFiles
             } catch {
                 guard !Task.isCancelled else {
                     return
                 }
 
-                datasetState.supportedFileCount = nil
-                datasetState.analyzedPhotoCount = nil
-                datasetState.analysisStatus = .failed
-                packageState = AIPackageUIState(
+                coordinator.datasetState.supportedFileCount = nil
+                coordinator.datasetState.analyzedPhotoCount = nil
+                coordinator.datasetState.analysisStatus = .failed
+                coordinator.packageState = AIPackageUIState(
                     status: .failed,
                     packageURL: nil,
                     metadataExists: false,
@@ -626,18 +569,18 @@ struct ContentView: View {
                     archiveExists: false,
                     error: AppErrorInfo.exportFailure(error)
                 )
-                analysisPhase = .failed
+                coordinator.analysisPhase = .failed
             }
 
-            isCountingSupportedFiles = false
-            supportedFileCountTask = nil
+            coordinator.isCountingSupportedFiles = false
+            coordinator.supportedFileCountTask = nil
         }
-        supportedFileCountTask = task
+        coordinator.supportedFileCountTask = task
     }
 
     /// Opens a folder picker and stores the AI package output folder.
     private func selectOutputFolder() {
-        guard !isAnalyzing else {
+        guard !coordinator.isAnalyzing else {
             return
         }
 
@@ -656,10 +599,10 @@ struct ContentView: View {
         }
 
         selectedOutputFolderURL = url
-        packageState = .initial
-        contactSheetPreview.reset()
-        analysisProgress = nil
-        analysisPhase = .ready
+        coordinator.packageState = .initial
+        coordinator.contactSheetPreview.reset()
+        coordinator.analysisProgress = nil
+        coordinator.analysisPhase = .ready
     }
 
     /// Resolves a persisted output folder, or creates the default Documents/PhotoAnalyzer folder.
@@ -676,11 +619,11 @@ struct ContentView: View {
 
     /// Applies current Photos analysis preferences to the active Photos source.
     private func updateSelectedPhotosPolicy() {
-        guard case .photosLibrary(let selection) = selectedAnalysisSource else {
+        guard case .photosLibrary(let selection) = coordinator.selectedAnalysisSource else {
             return
         }
 
-        selectedAnalysisSource = .photosLibrary(PhotosSelection(
+        coordinator.selectedAnalysisSource = .photosLibrary(PhotosSelection(
             mode: selection.mode,
             representation: photosAssetRepresentation,
             networkAccessPolicy: photosNetworkAccessPolicy
@@ -689,17 +632,17 @@ struct ContentView: View {
 
     /// Starts analysis for the selected folder.
     private func analyzeSelectedSource() {
-        guard !isAnalyzing, !isCountingSupportedFiles else {
+        guard !coordinator.isAnalyzing, !coordinator.isCountingSupportedFiles else {
             return
         }
 
-        guard let selectedAnalysisSource else {
-            analysisPhase = .noFolderSelected
+        guard let selectedAnalysisSource = coordinator.selectedAnalysisSource else {
+            coordinator.analysisPhase = .noFolderSelected
             return
         }
 
-        guard (datasetState.supportedFileCount ?? 0) > 0 else {
-            analysisPhase = .noSupportedFiles
+        guard (coordinator.datasetState.supportedFileCount ?? 0) > 0 else {
+            coordinator.analysisPhase = .noSupportedFiles
             return
         }
 
@@ -708,18 +651,18 @@ struct ContentView: View {
             let task = Task {
                 await analyzeSelectedFolderFiles(in: source.folderURL)
             }
-            analysisTask = task
+            coordinator.analysisTask = task
         case .photosLibrary(let selection):
             let task = Task {
                 await analyzePhotoKitSelection(selection)
             }
-            analysisTask = task
+            coordinator.analysisTask = task
         }
     }
 
     /// Cancels the currently running analysis, if any.
     private func cancelAnalysis() {
-        analysisTask?.cancel()
+        coordinator.analysisTask?.cancel()
     }
 
     /// Opens the persisted settings screen.
@@ -742,21 +685,21 @@ struct ContentView: View {
     /// Runs folder analysis and package export for the selected folder.
     /// - Parameter folderURL: The folder URL selected by the user.
     private func analyzeSelectedFolderFiles(in folderURL: URL) async {
-        guard !isAnalyzing else {
+        guard !coordinator.isAnalyzing else {
             return
         }
 
         let outputFolderURL = selectedOutputFolderURL
         let shouldIncludeSubfolders = includeSubfolders
-        let expectedSupportedFileCount = datasetState.supportedFileCount
+        let expectedSupportedFileCount = coordinator.datasetState.supportedFileCount
         let packagePaths = AIAnalysisPackagePaths(
             datasetFolderURL: folderURL,
             outputFolderURL: outputFolderURL
         )
 
-        beginAnalysis(packagePaths: packagePaths, progressMessage: "Starting analysis...")
+        coordinator.beginAnalysis(packagePaths: packagePaths, progressMessage: "Starting analysis...")
         defer {
-            finishAnalysis()
+            coordinator.finishAnalysis()
         }
 
         do {
@@ -771,29 +714,29 @@ struct ContentView: View {
                 ),
                 progressHandler: { progress in
                     Task { @MainActor in
-                        applyPipelineProgress(progress)
+                        coordinator.applyPipelineProgress(progress)
                     }
                 }
             )
 
-            completeAnalysis(
+            coordinator.completeAnalysis(
                 paths: result.paths,
                 statistics: result.statistics,
                 supportedFileCount: result.supportedFileCount,
                 analyzedPhotoCount: result.analyzedPhotoCount
             )
         } catch AnalysisPipelineError.noSupportedFiles {
-            handleNoSupportedFiles(status: .folderSelected)
+            coordinator.handleNoSupportedFiles(status: .folderSelected)
         } catch is CancellationError {
-            handleAnalysisCancellation(logMessage: "Folder analysis cancelled.")
+            coordinator.handleAnalysisCancellation(logMessage: "Folder analysis cancelled.")
         } catch {
-            handleAnalysisFailure(error, packagePaths: packagePaths, logPrefix: "AI package export failed")
+            coordinator.handleAnalysisFailure(error, packagePaths: packagePaths, logPrefix: "AI package export failed")
         }
     }
 
     /// Materializes a PhotoKit-backed Photos Library selection and runs the file-based pipeline.
     private func analyzePhotoKitSelection(_ selection: PhotosSelection) async {
-        guard !isAnalyzing else {
+        guard !coordinator.isAnalyzing else {
             return
         }
 
@@ -805,9 +748,9 @@ struct ContentView: View {
             outputFolderURL: outputFolderURL
         )
 
-        beginAnalysis(packagePaths: packagePaths, progressMessage: "Preparing Photos assets...")
+        coordinator.beginAnalysis(packagePaths: packagePaths, progressMessage: "Preparing Photos assets...")
         defer {
-            finishAnalysis()
+            coordinator.finishAnalysis()
         }
 
         do {
@@ -821,12 +764,12 @@ struct ContentView: View {
                 ),
                 progressHandler: { progress in
                     Task { @MainActor in
-                        applyPipelineProgress(progress)
+                        coordinator.applyPipelineProgress(progress)
                     }
                 }
             )
 
-            completeAnalysis(
+            coordinator.completeAnalysis(
                 paths: result.paths,
                 statistics: result.statistics,
                 supportedFileCount: result.supportedFileCount,
@@ -834,100 +777,11 @@ struct ContentView: View {
                 error: AppErrorInfo.photosSkippedAssets(result.skippedAssets)
             )
         } catch AnalysisPipelineError.noSupportedFiles {
-            handleNoSupportedFiles(status: .sourceSelected)
+            coordinator.handleNoSupportedFiles(status: .sourceSelected)
         } catch is CancellationError {
-            handleAnalysisCancellation(logMessage: "Photos analysis cancelled.")
+            coordinator.handleAnalysisCancellation(logMessage: "Photos analysis cancelled.")
         } catch {
-            handleAnalysisFailure(error, packagePaths: packagePaths, logPrefix: "Photos package export failed")
-        }
-    }
-
-    /// Applies the shared UI state for a newly started analysis.
-    private func beginAnalysis(packagePaths: AIAnalysisPackagePaths, progressMessage: String) {
-        isAnalyzing = true
-        supportedFileCountTask?.cancel()
-        supportedFileCountTask = nil
-        isCountingSupportedFiles = false
-        statistics = nil
-        contactSheetPreview.reset()
-        analysisProgress = AnalysisProgress(fractionCompleted: 0, message: progressMessage)
-        datasetState.analysisStatus = .analyzing
-        datasetState.analyzedPhotoCount = nil
-        packageState = AIPackageUIState(
-            status: .generating,
-            packageURL: packagePaths.packageURL,
-            metadataExists: false,
-            statisticsExists: false,
-            contactSheetExists: false,
-            indexExists: false,
-            archiveExists: false,
-            error: nil
-        )
-    }
-
-    /// Clears shared task state after an analysis exits.
-    private func finishAnalysis() {
-        isAnalyzing = false
-        analysisTask = nil
-    }
-
-    /// Applies the shared UI state for a completed analysis.
-    private func completeAnalysis(
-        paths: AIAnalysisPackagePaths,
-        statistics newStatistics: PhotoStatistics,
-        supportedFileCount: Int,
-        analyzedPhotoCount: Int,
-        error: AppErrorInfo? = nil
-    ) {
-        statistics = newStatistics
-        datasetState.supportedFileCount = supportedFileCount
-        datasetState.analyzedPhotoCount = analyzedPhotoCount
-        datasetState.analysisStatus = .completed
-        packageState = AIPackageUIState(packageURL: paths.packageURL, error: error)
-        analysisPhase = .completed
-        contactSheetPreview.load(from: paths.packageURL)
-    }
-
-    /// Applies the shared UI state when a selected source contains no supported images.
-    private func handleNoSupportedFiles(status: AnalysisStatus) {
-        datasetState.supportedFileCount = 0
-        datasetState.analysisStatus = status
-        packageState = .initial
-        analysisPhase = .noSupportedFiles
-        analysisProgress = nil
-    }
-
-    /// Applies the shared UI state for a cancelled analysis.
-    private func handleAnalysisCancellation(logMessage: String) {
-        print(logMessage)
-        statistics = nil
-        contactSheetPreview.reset()
-        datasetState.analysisStatus = .cancelled
-        datasetState.analyzedPhotoCount = nil
-        packageState = .initial
-        analysisPhase = .cancelled
-        analysisProgress = nil
-    }
-
-    /// Applies the shared UI state for an analysis or export failure.
-    private func handleAnalysisFailure(
-        _ error: Error,
-        packagePaths: AIAnalysisPackagePaths,
-        logPrefix: String
-    ) {
-        let appError = AppErrorInfo.exportFailure(error)
-        print("\(logPrefix): \(appError.debugDescription)")
-        datasetState.analysisStatus = statistics == nil ? .failed : .completedWithExportError
-        packageState = AIPackageUIState(packageURL: packagePaths.packageURL, error: appError)
-        analysisPhase = statistics == nil ? .failed : .exportFailed
-        analysisProgress = nil
-    }
-
-    /// Applies service progress to the dashboard state.
-    private func applyPipelineProgress(_ progress: AnalysisProgress) {
-        analysisProgress = progress
-        if let phase = progress.phase {
-            analysisPhase = phase
+            coordinator.handleAnalysisFailure(error, packagePaths: packagePaths, logPrefix: "Photos package export failed")
         }
     }
 
@@ -936,9 +790,9 @@ struct ContentView: View {
     ///   - folderURL: The selected folder URL.
     ///   - includeSubfolders: Whether subfolders should be scanned recursively.
     private func startSupportedFileCount(for folderURL: URL, includeSubfolders: Bool) {
-        supportedFileCountTask?.cancel()
-        isCountingSupportedFiles = true
-        analysisPhase = .scanningFiles
+        coordinator.supportedFileCountTask?.cancel()
+        coordinator.isCountingSupportedFiles = true
+        coordinator.analysisPhase = .scanningFiles
 
         let task = Task {
             let countTask = Task<Int, Never>.detached(priority: .utility) {
@@ -955,34 +809,36 @@ struct ContentView: View {
                 return
             }
 
-            datasetState.supportedFileCount = fileCount
-            datasetState.analyzedPhotoCount = nil
-            datasetState.analysisStatus = .folderSelected
-            analysisPhase = fileCount > 0 ? .ready : .noSupportedFiles
-            isCountingSupportedFiles = false
-            supportedFileCountTask = nil
+            coordinator.datasetState.supportedFileCount = fileCount
+            coordinator.datasetState.analyzedPhotoCount = nil
+            coordinator.datasetState.analysisStatus = .folderSelected
+            coordinator.analysisPhase = fileCount > 0 ? .ready : .noSupportedFiles
+            coordinator.isCountingSupportedFiles = false
+            coordinator.supportedFileCountTask = nil
         }
-        supportedFileCountTask = task
+        coordinator.supportedFileCountTask = task
     }
 
     /// Recounts supported files after scan options change.
     private func updateSupportedFileCountForSelectedFolder() {
-        guard !isAnalyzing, !isCountingSupportedFiles, let selectedFolderURL else {
+        guard !coordinator.isAnalyzing,
+              !coordinator.isCountingSupportedFiles,
+              let selectedFolderURL = coordinator.selectedFolderURL else {
             return
         }
 
-        selectedAnalysisSource = .folder(FolderAnalysisSource(
+        coordinator.selectedAnalysisSource = .folder(FolderAnalysisSource(
             folderURL: selectedFolderURL,
             includeSubfolders: includeSubfolders
         ))
 
-        statistics = nil
-        packageState = .initial
-        contactSheetPreview.reset()
-        analysisProgress = nil
-        datasetState.supportedFileCount = nil
-        datasetState.analyzedPhotoCount = nil
-        datasetState.analysisStatus = .folderSelected
+        coordinator.statistics = nil
+        coordinator.packageState = .initial
+        coordinator.contactSheetPreview.reset()
+        coordinator.analysisProgress = nil
+        coordinator.datasetState.supportedFileCount = nil
+        coordinator.datasetState.analyzedPhotoCount = nil
+        coordinator.datasetState.analysisStatus = .folderSelected
         startSupportedFileCount(
             for: selectedFolderURL,
             includeSubfolders: includeSubfolders
@@ -991,19 +847,19 @@ struct ContentView: View {
 
     /// Opens the generated contact sheet in a dedicated viewer.
     private func openContactSheetViewer() {
-        guard contactSheetPreview.canOpenViewer else {
+        guard coordinator.contactSheetPreview.canOpenViewer else {
             return
         }
 
         contactSheetViewerPresenter.open(
-            pageURLs: contactSheetPreview.pageURLs,
-            initialPageIndex: contactSheetPreview.currentPageIndex
+            pageURLs: coordinator.contactSheetPreview.pageURLs,
+            initialPageIndex: coordinator.contactSheetPreview.currentPageIndex
         )
     }
 
     /// Opens the generated package folder.
     private func openPackage() {
-        guard let packageURL = packageState.packageURL else {
+        guard let packageURL = coordinator.packageState.packageURL else {
             return
         }
 
@@ -1012,7 +868,7 @@ struct ContentView: View {
 
     /// Reveals the generated package archive in Finder.
     private func revealArchive() {
-        guard let packageURL = packageState.packageURL else {
+        guard let packageURL = coordinator.packageState.packageURL else {
             return
         }
 
