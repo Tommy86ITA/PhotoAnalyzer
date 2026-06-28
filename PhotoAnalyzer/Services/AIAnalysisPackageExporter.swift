@@ -12,55 +12,15 @@ final class AIAnalysisPackageExporter {
 	/// Creates an AI analysis package exporter.
 	nonisolated init() {}
 
-	/// Creates an AI analysis package with normalized metadata and statistics JSON files.
-	/// - Parameters:
-	///   - folderURL: The original folder URL analyzed by PhotoAnalyzer.
-		///   - metadata: The rich export metadata produced by the analysis pipeline.
-		///   - sourceFileURLs: The analyzed source image files in contact sheet order.
-		///   - statistics: The aggregate statistics produced from the photos.
-		///   - paths: The package paths used for the exported files.
-		/// - Returns: The URL of the created package folder.
-		/// - Throws: File system or JSON encoding errors.
-		nonisolated func exportPackage(
-		for folderURL: URL,
-		metadata: [ExportPhotoMetadata],
-		sourceFileURLs: [URL],
-		statistics: PhotoStatistics,
-		paths: AIAnalysisPackagePaths
-	) async throws -> URL {
-		try await PerformanceLogger.measure("AI package export total") {
-			print("AI package export started")
-
-			try Task.checkCancellation()
-			let paths = try exportDataFiles(
-				for: folderURL,
-				metadata: metadata,
-				sourceFileURLs: sourceFileURLs,
-				statistics: statistics,
-				paths: paths
-			)
-
-			try Task.checkCancellation()
-			try await exportContactSheet(
-				folderURL: folderURL,
-				sourceFileURLs: sourceFileURLs,
-				paths: paths
-			)
-
-			print("AI package export completed")
-			return paths.packageURL
-		}
-	}
-
 	/// Creates the AI package folder and writes the JSON payloads.
 	/// - Parameters:
 	///   - folderURL: The original folder URL analyzed by PhotoAnalyzer.
-		///   - metadata: The rich export metadata produced by the analysis pipeline.
-		///   - sourceFileURLs: The analyzed source image files in contact sheet order.
-		///   - statistics: The aggregate statistics produced from the photos.
-		///   - paths: The package paths used for the exported files.
-		/// - Returns: The package paths used by subsequent export phases.
-		/// - Throws: File system or JSON encoding errors.
+	///   - metadata: The rich export metadata produced by the analysis pipeline.
+	///   - sourceFileURLs: The analyzed source image files in contact sheet order.
+	///   - statistics: The aggregate statistics produced from the photos.
+	///   - paths: The package paths used for the exported files.
+	/// - Returns: The package paths used by subsequent export phases.
+	/// - Throws: File system or JSON encoding errors.
 	nonisolated func exportDataFiles(
 		for folderURL: URL,
 		metadata: [ExportPhotoMetadata],

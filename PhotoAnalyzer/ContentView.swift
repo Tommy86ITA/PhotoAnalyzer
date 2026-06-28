@@ -362,6 +362,10 @@ struct ContentView: View {
         photosAssetLoadingError = nil
 
         Task {
+            defer {
+                isLoadingPhotosAssets = false
+            }
+
             do {
                 let assets = try await PhotosLibraryAssetBrowserService().fetchImageAssets()
                 guard !Task.isCancelled else {
@@ -378,8 +382,6 @@ struct ContentView: View {
                 photosAssets = []
                 photosAssetLoadingError = AppErrorInfo.exportFailure(error)
             }
-
-            isLoadingPhotosAssets = false
         }
     }
 
@@ -536,6 +538,10 @@ struct ContentView: View {
         photosAlbumLoadingError = nil
 
         Task {
+            defer {
+                isLoadingPhotosAlbums = false
+            }
+
             do {
                 let albums = try await PhotosLibraryAlbumService().fetchAlbums()
                 guard !Task.isCancelled else {
@@ -552,8 +558,6 @@ struct ContentView: View {
                 photosAlbums = []
                 photosAlbumLoadingError = AppErrorInfo.exportFailure(error)
             }
-
-            isLoadingPhotosAlbums = false
         }
     }
 
@@ -713,19 +717,6 @@ struct ContentView: View {
         }
     }
 
-    /// Starts analysis for the selected folder.
-    private func analyzeSelectedFolder() {
-        guard let selectedFolderURL else {
-            analysisPhase = .noFolderSelected
-            return
-        }
-
-        let task = Task {
-            await analyzeSelectedFolderFiles(in: selectedFolderURL)
-        }
-        analysisTask = task
-    }
-
     /// Cancels the currently running analysis, if any.
     private func cancelAnalysis() {
         analysisTask?.cancel()
@@ -763,30 +754,10 @@ struct ContentView: View {
             outputFolderURL: outputFolderURL
         )
 
-        isAnalyzing = true
-        supportedFileCountTask?.cancel()
-        supportedFileCountTask = nil
-        isCountingSupportedFiles = false
+        beginAnalysis(packagePaths: packagePaths, progressMessage: "Starting analysis...")
         defer {
-            isAnalyzing = false
-            analysisTask = nil
+            finishAnalysis()
         }
-
-        statistics = nil
-        contactSheetPreview.reset()
-        analysisProgress = AnalysisProgress(fractionCompleted: 0, message: "Starting analysis...")
-        datasetState.analysisStatus = .analyzing
-        datasetState.analyzedPhotoCount = nil
-        packageState = AIPackageUIState(
-            status: .generating,
-            packageURL: packagePaths.packageURL,
-            metadataExists: false,
-            statisticsExists: false,
-            contactSheetExists: false,
-            indexExists: false,
-            archiveExists: false,
-            error: nil
-        )
 
         do {
             let result = try await AnalysisPipelineService().run(
@@ -805,35 +776,18 @@ struct ContentView: View {
                 }
             )
 
-            statistics = result.statistics
-            datasetState.supportedFileCount = result.supportedFileCount
-            datasetState.analyzedPhotoCount = result.analyzedPhotoCount
-            datasetState.analysisStatus = .completed
-            packageState = AIPackageUIState(packageURL: result.paths.packageURL)
-            analysisPhase = .completed
-            contactSheetPreview.load(from: result.paths.packageURL)
+            completeAnalysis(
+                paths: result.paths,
+                statistics: result.statistics,
+                supportedFileCount: result.supportedFileCount,
+                analyzedPhotoCount: result.analyzedPhotoCount
+            )
         } catch AnalysisPipelineError.noSupportedFiles {
-            datasetState.supportedFileCount = 0
-            datasetState.analysisStatus = .folderSelected
-            packageState = .initial
-            analysisPhase = .noSupportedFiles
-            analysisProgress = nil
+            handleNoSupportedFiles(status: .folderSelected)
         } catch is CancellationError {
-            print("Folder analysis cancelled.")
-            statistics = nil
-            contactSheetPreview.reset()
-            datasetState.analysisStatus = .cancelled
-            datasetState.analyzedPhotoCount = nil
-            packageState = .initial
-            analysisPhase = .cancelled
-            analysisProgress = nil
+            handleAnalysisCancellation(logMessage: "Folder analysis cancelled.")
         } catch {
-            let appError = AppErrorInfo.exportFailure(error)
-            print("AI package export failed: \(appError.debugDescription)")
-            datasetState.analysisStatus = statistics == nil ? .failed : .completedWithExportError
-            packageState = AIPackageUIState(packageURL: packagePaths.packageURL, error: appError)
-            analysisPhase = statistics == nil ? .failed : .exportFailed
-            analysisProgress = nil
+            handleAnalysisFailure(error, packagePaths: packagePaths, logPrefix: "AI package export failed")
         }
     }
 
@@ -851,30 +805,10 @@ struct ContentView: View {
             outputFolderURL: outputFolderURL
         )
 
-        isAnalyzing = true
-        supportedFileCountTask?.cancel()
-        supportedFileCountTask = nil
-        isCountingSupportedFiles = false
+        beginAnalysis(packagePaths: packagePaths, progressMessage: "Preparing Photos assets...")
         defer {
-            isAnalyzing = false
-            analysisTask = nil
+            finishAnalysis()
         }
-
-        statistics = nil
-        contactSheetPreview.reset()
-        analysisProgress = AnalysisProgress(fractionCompleted: 0, message: "Preparing Photos assets...")
-        datasetState.analysisStatus = .analyzing
-        datasetState.analyzedPhotoCount = nil
-        packageState = AIPackageUIState(
-            status: .generating,
-            packageURL: packagePaths.packageURL,
-            metadataExists: false,
-            statisticsExists: false,
-            contactSheetExists: false,
-            indexExists: false,
-            archiveExists: false,
-            error: nil
-        )
 
         do {
             let result = try await PhotosAnalysisPipelineService().run(
@@ -892,39 +826,101 @@ struct ContentView: View {
                 }
             )
 
-            statistics = result.statistics
-            datasetState.supportedFileCount = result.supportedFileCount
-            datasetState.analyzedPhotoCount = result.analyzedPhotoCount
-            datasetState.analysisStatus = .completed
-            packageState = AIPackageUIState(
-                packageURL: result.paths.packageURL,
+            completeAnalysis(
+                paths: result.paths,
+                statistics: result.statistics,
+                supportedFileCount: result.supportedFileCount,
+                analyzedPhotoCount: result.analyzedPhotoCount,
                 error: AppErrorInfo.photosSkippedAssets(result.skippedAssets)
             )
-            analysisPhase = .completed
-            contactSheetPreview.load(from: result.paths.packageURL)
         } catch AnalysisPipelineError.noSupportedFiles {
-            datasetState.supportedFileCount = 0
-            datasetState.analysisStatus = .sourceSelected
-            packageState = .initial
-            analysisPhase = .noSupportedFiles
-            analysisProgress = nil
+            handleNoSupportedFiles(status: .sourceSelected)
         } catch is CancellationError {
-            print("Photos analysis cancelled.")
-            statistics = nil
-            contactSheetPreview.reset()
-            datasetState.analysisStatus = .cancelled
-            datasetState.analyzedPhotoCount = nil
-            packageState = .initial
-            analysisPhase = .cancelled
-            analysisProgress = nil
+            handleAnalysisCancellation(logMessage: "Photos analysis cancelled.")
         } catch {
-            let appError = AppErrorInfo.exportFailure(error)
-            print("Photos package export failed: \(appError.debugDescription)")
-            datasetState.analysisStatus = statistics == nil ? .failed : .completedWithExportError
-            packageState = AIPackageUIState(packageURL: packagePaths.packageURL, error: appError)
-            analysisPhase = statistics == nil ? .failed : .exportFailed
-            analysisProgress = nil
+            handleAnalysisFailure(error, packagePaths: packagePaths, logPrefix: "Photos package export failed")
         }
+    }
+
+    /// Applies the shared UI state for a newly started analysis.
+    private func beginAnalysis(packagePaths: AIAnalysisPackagePaths, progressMessage: String) {
+        isAnalyzing = true
+        supportedFileCountTask?.cancel()
+        supportedFileCountTask = nil
+        isCountingSupportedFiles = false
+        statistics = nil
+        contactSheetPreview.reset()
+        analysisProgress = AnalysisProgress(fractionCompleted: 0, message: progressMessage)
+        datasetState.analysisStatus = .analyzing
+        datasetState.analyzedPhotoCount = nil
+        packageState = AIPackageUIState(
+            status: .generating,
+            packageURL: packagePaths.packageURL,
+            metadataExists: false,
+            statisticsExists: false,
+            contactSheetExists: false,
+            indexExists: false,
+            archiveExists: false,
+            error: nil
+        )
+    }
+
+    /// Clears shared task state after an analysis exits.
+    private func finishAnalysis() {
+        isAnalyzing = false
+        analysisTask = nil
+    }
+
+    /// Applies the shared UI state for a completed analysis.
+    private func completeAnalysis(
+        paths: AIAnalysisPackagePaths,
+        statistics newStatistics: PhotoStatistics,
+        supportedFileCount: Int,
+        analyzedPhotoCount: Int,
+        error: AppErrorInfo? = nil
+    ) {
+        statistics = newStatistics
+        datasetState.supportedFileCount = supportedFileCount
+        datasetState.analyzedPhotoCount = analyzedPhotoCount
+        datasetState.analysisStatus = .completed
+        packageState = AIPackageUIState(packageURL: paths.packageURL, error: error)
+        analysisPhase = .completed
+        contactSheetPreview.load(from: paths.packageURL)
+    }
+
+    /// Applies the shared UI state when a selected source contains no supported images.
+    private func handleNoSupportedFiles(status: AnalysisStatus) {
+        datasetState.supportedFileCount = 0
+        datasetState.analysisStatus = status
+        packageState = .initial
+        analysisPhase = .noSupportedFiles
+        analysisProgress = nil
+    }
+
+    /// Applies the shared UI state for a cancelled analysis.
+    private func handleAnalysisCancellation(logMessage: String) {
+        print(logMessage)
+        statistics = nil
+        contactSheetPreview.reset()
+        datasetState.analysisStatus = .cancelled
+        datasetState.analyzedPhotoCount = nil
+        packageState = .initial
+        analysisPhase = .cancelled
+        analysisProgress = nil
+    }
+
+    /// Applies the shared UI state for an analysis or export failure.
+    private func handleAnalysisFailure(
+        _ error: Error,
+        packagePaths: AIAnalysisPackagePaths,
+        logPrefix: String
+    ) {
+        let appError = AppErrorInfo.exportFailure(error)
+        print("\(logPrefix): \(appError.debugDescription)")
+        datasetState.analysisStatus = statistics == nil ? .failed : .completedWithExportError
+        packageState = AIPackageUIState(packageURL: packagePaths.packageURL, error: appError)
+        analysisPhase = statistics == nil ? .failed : .exportFailed
+        analysisProgress = nil
     }
 
     /// Applies service progress to the dashboard state.
