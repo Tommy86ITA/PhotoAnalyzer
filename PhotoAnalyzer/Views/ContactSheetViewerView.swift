@@ -61,6 +61,7 @@ struct ContactSheetViewerView: View {
                 fitWidth: { sendCommand(.fitWidth) },
                 fitWindow: { sendCommand(.fitWindow) },
                 actualSize: { sendCommand(.actualSize) },
+                revealCurrentPage: revealCurrentPage,
                 close: close
             )
             .padding(Layout.toolbarPadding)
@@ -102,6 +103,14 @@ struct ContactSheetViewerView: View {
         return NSImage(contentsOf: pageURLs[currentPageIndex])
     }
 
+    private var currentPageURL: URL? {
+        guard pageURLs.indices.contains(currentPageIndex) else {
+            return nil
+        }
+
+        return pageURLs[currentPageIndex]
+    }
+
     private func showPreviousPage() {
         currentPageIndex = max(0, currentPageIndex - 1)
     }
@@ -116,6 +125,14 @@ struct ContactSheetViewerView: View {
 
     private func zoomOut() {
         zoom = clampedZoom(zoom - Zoom.step)
+    }
+
+    private func revealCurrentPage() {
+        guard let currentPageURL else {
+            return
+        }
+
+        NSWorkspace.shared.activateFileViewerSelecting([currentPageURL])
     }
 
     private func clampedZoom(_ value: Double) -> Double {

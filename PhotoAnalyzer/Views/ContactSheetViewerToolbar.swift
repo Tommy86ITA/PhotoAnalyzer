@@ -9,6 +9,10 @@ import SwiftUI
 
 /// Toolbar controls for contact sheet page navigation and zoom.
 struct ContactSheetViewerToolbar: View {
+    private enum Layout {
+        static let zoomSliderWidth: CGFloat = 210
+    }
+
     let pageCount: Int
     let currentPageIndex: Int
     @Binding var zoom: Double
@@ -22,6 +26,7 @@ struct ContactSheetViewerToolbar: View {
     let fitWidth: () -> Void
     let fitWindow: () -> Void
     let actualSize: () -> Void
+    let revealCurrentPage: () -> Void
     let close: () -> Void
 
     var body: some View {
@@ -38,70 +43,88 @@ struct ContactSheetViewerToolbar: View {
             Spacer(minLength: 0)
 
             if pageCount > 1 {
-                Button {
-                    showPreviousPage()
-                } label: {
-                    Image(systemName: "chevron.left")
-                }
-                .disabled(currentPageIndex <= 0)
-                .help("Previous Page")
-                .keyboardShortcut(.leftArrow, modifiers: [])
+                ControlGroup {
+                    Button {
+                        showPreviousPage()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                    .disabled(currentPageIndex <= 0)
+                    .help("Previous Page")
+                    .keyboardShortcut(.leftArrow, modifiers: [])
 
-                Button {
-                    showNextPage()
-                } label: {
-                    Image(systemName: "chevron.right")
+                    Button {
+                        showNextPage()
+                    } label: {
+                        Image(systemName: "chevron.right")
+                    }
+                    .disabled(currentPageIndex >= pageCount - 1)
+                    .help("Next Page")
+                    .keyboardShortcut(.rightArrow, modifiers: [])
                 }
-                .disabled(currentPageIndex >= pageCount - 1)
-                .help("Next Page")
-                .keyboardShortcut(.rightArrow, modifiers: [])
 
                 Divider()
                     .frame(height: 18)
             }
 
-            Button {
-                zoomOut()
-            } label: {
-                Image(systemName: "minus.magnifyingglass")
+            ControlGroup {
+                Button {
+                    zoomOut()
+                } label: {
+                    Image(systemName: "minus.magnifyingglass")
+                }
+                .help("Zoom Out")
+                .keyboardShortcut("-", modifiers: .command)
+
+                Button {
+                    actualSize()
+                } label: {
+                    Text("1:1")
+                        .monospacedDigit()
+                }
+                .help("Actual Size")
+
+                Button {
+                    zoomIn()
+                } label: {
+                    Image(systemName: "plus.magnifyingglass")
+                }
+                .help("Zoom In")
+                .keyboardShortcut("+", modifiers: .command)
             }
-            .help("Zoom Out")
-            .keyboardShortcut("-", modifiers: .command)
 
             Slider(value: $zoom, in: minimumZoom...maximumZoom)
-                .frame(width: zoomSliderWidth)
+                .frame(width: max(Layout.zoomSliderWidth, zoomSliderWidth))
                 .help("Adjust Zoom")
 
-            Button {
-                zoomIn()
-            } label: {
-                Image(systemName: "plus.magnifyingglass")
-            }
-            .help("Zoom In")
-            .keyboardShortcut("+", modifiers: .command)
+            Text(zoomText)
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 48, alignment: .trailing)
 
-            Button {
-                fitWidth()
-            } label: {
-                Image(systemName: "arrow.left.and.right")
-            }
-            .help("Fit Width")
-            .keyboardShortcut("0", modifiers: .command)
+            ControlGroup {
+                Button {
+                    fitWidth()
+                } label: {
+                    Image(systemName: "arrow.left.and.right")
+                }
+                .help("Fit Width")
+                .keyboardShortcut("0", modifiers: .command)
 
-            Button {
-                fitWindow()
-            } label: {
-                Image(systemName: "arrow.down.right.and.arrow.up.left")
-            }
-            .help("Fit to Window")
+                Button {
+                    fitWindow()
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                }
+                .help("Fit Page")
 
-            Button {
-                actualSize()
-            } label: {
-                Text("100%")
-                    .monospacedDigit()
+                Button {
+                    revealCurrentPage()
+                } label: {
+                    Image(systemName: "folder")
+                }
+                .help("Reveal Current Contact Sheet Page in Finder")
             }
-            .help("Actual Size")
 
             Button("Done") {
                 close()
@@ -109,5 +132,9 @@ struct ContactSheetViewerToolbar: View {
             .keyboardShortcut(.defaultAction)
             .help("Close Contact Sheet Viewer")
         }
+    }
+
+    private var zoomText: String {
+        "\(Int((zoom * 100).rounded()))%"
     }
 }

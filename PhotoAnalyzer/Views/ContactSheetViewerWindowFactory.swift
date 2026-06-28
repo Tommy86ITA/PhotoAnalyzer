@@ -11,7 +11,7 @@ import SwiftUI
 /// Builds the dedicated contact sheet viewer window.
 enum ContactSheetViewerWindowFactory {
     private enum Layout {
-        static let width: CGFloat = 1000
+        static let width: CGFloat = 1120
         static let height: CGFloat = 720
         static let minimumWidth: CGFloat = 760
         static let minimumHeight: CGFloat = 520
