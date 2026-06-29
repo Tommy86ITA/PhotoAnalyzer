@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OSLog
 import Observation
 
 /// Observable runtime state for the current analysis workflow.
@@ -319,7 +320,7 @@ final class AnalysisCoordinator {
 
     /// Applies the shared UI state for a cancelled analysis.
     private func handleAnalysisCancellation(logMessage: String) {
-        print(logMessage)
+        AppLogger.analysis.info("\(logMessage, privacy: .public)")
         statistics = nil
         contactSheetPreview.reset()
         datasetState.analysisStatus = .cancelled
@@ -336,7 +337,7 @@ final class AnalysisCoordinator {
         logPrefix: String
     ) {
         let appError = AppErrorInfo.exportFailure(error)
-        print("\(logPrefix): \(appError.debugDescription)")
+        AppLogger.analysis.error("\(logPrefix, privacy: .public): \(appError.debugDescription, privacy: .public)")
         datasetState.analysisStatus = statistics == nil ? .failed : .completedWithExportError
         packageState = AIPackageUIState(packageURL: packagePaths.packageURL, error: appError)
         analysisPhase = statistics == nil ? .failed : .exportFailed

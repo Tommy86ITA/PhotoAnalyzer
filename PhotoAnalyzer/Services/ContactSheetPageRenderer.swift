@@ -7,6 +7,7 @@
 
 import AppKit
 import Foundation
+import OSLog
 
 nonisolated struct ContactSheetPageRenderer {
     private let backgroundColor = NSColor.white
@@ -27,7 +28,7 @@ nonisolated struct ContactSheetPageRenderer {
             width: ContactSheetLayout.padding * 2 + CGFloat(columns) * cellWidth + CGFloat(columns - 1) * ContactSheetLayout.spacing,
             height: ContactSheetLayout.padding * 2 + CGFloat(rows) * cellHeight + CGFloat(rows - 1) * ContactSheetLayout.spacing
         )
-        print("Contact sheet page: file=\(sheetFileName), columns=\(columns), rows=\(rows), size=\(Int(canvasSize.width))x\(Int(canvasSize.height))")
+        AppLogger.contactSheet.debug("Contact sheet page: file=\(sheetFileName, privacy: .public), columns=\(columns, privacy: .public), rows=\(rows, privacy: .public), size=\(Int(canvasSize.width), privacy: .public)x\(Int(canvasSize.height), privacy: .public)")
 
         guard canvasSize.width <= ContactSheetLayout.maximumJPEGDimension,
               canvasSize.height <= ContactSheetLayout.maximumJPEGDimension else {
@@ -136,7 +137,7 @@ nonisolated struct ContactSheetPageRenderer {
         }
 
         let error = "Preview unavailable"
-        print("Thumbnail unavailable: \(fileURL.lastPathComponent)")
+        AppLogger.contactSheet.warning("Thumbnail unavailable: \(fileURL.lastPathComponent, privacy: .public)")
         drawPlaceholder(in: rect, index: index, fileName: fileURL.lastPathComponent)
         return ThumbnailDrawResult(status: .unavailable, error: error)
     }

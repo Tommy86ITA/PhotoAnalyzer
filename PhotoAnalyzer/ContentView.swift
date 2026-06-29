@@ -5,6 +5,7 @@
 //  Created by Thomas Amaranto on 15/06/2026.
 //
 
+import OSLog
 import SwiftUI
 
 #if canImport(AppKit)
@@ -372,7 +373,7 @@ struct ContentView: View {
             try DefaultOutputFolderProvider.ensureOutputFolderExists(at: url)
             outputFolderBookmarkData = try OutputFolderBookmarkStore.bookmarkData(for: url)
         } catch {
-            print("Failed to persist output folder selection: \(error)")
+            AppLogger.security.error("Failed to persist output folder selection: \(error.localizedDescription, privacy: .public)")
         }
 
         selectedOutputFolderURL = url
@@ -388,7 +389,7 @@ struct ContentView: View {
         do {
             try DefaultOutputFolderProvider.ensureOutputFolderExists(at: selectedOutputFolderURL)
         } catch {
-            print("Failed to prepare output folder: \(error)")
+            AppLogger.security.error("Failed to prepare output folder: \(error.localizedDescription, privacy: .public)")
         }
     }
 

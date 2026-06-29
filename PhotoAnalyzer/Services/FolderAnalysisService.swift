@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OSLog
 
 /// File-based folder analysis output for UI/statistics and AI package export.
 nonisolated struct FolderAnalysisResult {
@@ -112,7 +113,7 @@ final class FolderAnalysisService {
 			do {
 				processPerFileRunner = try exifToolService.makeProcessPerFileRunner()
 			} catch {
-				print("Could not initialize ExifTool runner: \(error.localizedDescription)")
+				AppLogger.analysis.error("Could not initialize ExifTool runner: \(error.localizedDescription, privacy: .public)")
 				return FolderAnalysisResult(photos: [], exportMetadata: [], fileURLs: [])
 			}
 
@@ -121,13 +122,13 @@ final class FolderAnalysisService {
 				activeRunner = persistentRunner ?? processPerFileRunner
 				isUsingPersistentRunner = true
 				#if DEBUG
-				print("ExifTool runner: stay_open")
+				AppLogger.analysis.debug("ExifTool runner: stay_open")
 				#endif
 			} catch {
 				activeRunner = processPerFileRunner
 				#if DEBUG
-				print("ExifTool runner: process-per-file")
-				print("Persistent ExifTool runner unavailable; using process-per-file fallback: \(error.localizedDescription)")
+				AppLogger.analysis.debug("ExifTool runner: process-per-file")
+				AppLogger.analysis.warning("Persistent ExifTool runner unavailable; using process-per-file fallback: \(error.localizedDescription, privacy: .public)")
 				#endif
 			}
 
@@ -152,7 +153,7 @@ final class FolderAnalysisService {
 					)
 				} catch let error as PersistentExifToolRunnerError where isUsingPersistentRunner {
 					#if DEBUG
-					print("Persistent ExifTool runner failed; falling back to process-per-file for the rest of this batch: \(error.localizedDescription)")
+					AppLogger.analysis.warning("Persistent ExifTool runner failed; falling back to process-per-file for the rest of this batch: \(error.localizedDescription, privacy: .public)")
 					#endif
 					persistentRunner?.close()
 					persistentRunner = nil
@@ -172,10 +173,10 @@ final class FolderAnalysisService {
 							analyzedFileURLs: &analyzedFileURLs
 						)
 					} catch {
-						print("Could not extract ExifTool metadata for \(fileURL.lastPathComponent): \(error.localizedDescription)")
+						AppLogger.analysis.warning("Could not extract ExifTool metadata for \(fileURL.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
 					}
 				} catch {
-					print("Could not extract ExifTool metadata for \(fileURL.lastPathComponent): \(error.localizedDescription)")
+					AppLogger.analysis.warning("Could not extract ExifTool metadata for \(fileURL.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
 				}
 
 				progressHandler?(
@@ -187,9 +188,9 @@ final class FolderAnalysisService {
 				)
 			}
 
-			print("Folder analysis completed.")
-			print("Photos analyzed: \(photos.count)")
-			print("Metadata cache hits: \(metadataCacheHitCount)")
+			AppLogger.analysis.info("Folder analysis completed.")
+			AppLogger.analysis.info("Photos analyzed: \(photos.count, privacy: .public)")
+			AppLogger.analysis.info("Metadata cache hits: \(metadataCacheHitCount, privacy: .public)")
 			return FolderAnalysisResult(
 				photos: photos,
 				exportMetadata: exportMetadataRecords,
@@ -215,7 +216,7 @@ final class FolderAnalysisService {
 			sourceKey: metadataCacheSourceKey,
 			using: runner
 		) else {
-			print("No ExifTool metadata returned for \(fileURL.lastPathComponent)")
+			AppLogger.analysis.warning("No ExifTool metadata returned for \(fileURL.lastPathComponent, privacy: .public)")
 			return
 		}
 

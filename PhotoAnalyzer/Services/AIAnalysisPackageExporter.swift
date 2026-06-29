@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OSLog
 
 /// Exports normalized analysis data for downstream AI workflows.
 final class AIAnalysisPackageExporter {
@@ -59,7 +60,7 @@ final class AIAnalysisPackageExporter {
 		progressHandler: (@Sendable (ProgressSnapshot) -> Void)?
 	) throws -> AIAnalysisPackagePaths {
 		try Task.checkCancellation()
-		print("AI package path: \(paths.packageURL.path)")
+		AppLogger.export.info("AI package path: \(paths.packageURL.path, privacy: .private)")
 		try FileManager.default.createDirectory(at: paths.packageURL, withIntermediateDirectories: true)
 
 		let jsonWriter = JSONFileWriter()

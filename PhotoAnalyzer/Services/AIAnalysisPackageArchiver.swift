@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OSLog
 import ZIPFoundation
 
 /// Creates a ZIP archive for a generated AI analysis package.
@@ -76,7 +77,7 @@ final class AIAnalysisPackageArchiver {
             )
         )
 
-        print("AI package archive path: \(archiveURL.path)")
+        AppLogger.export.info("AI package archive path: \(archiveURL.path, privacy: .private)")
         return archiveURL
     }
 }

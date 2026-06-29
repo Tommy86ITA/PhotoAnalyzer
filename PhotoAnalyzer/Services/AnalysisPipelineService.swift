@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OSLog
 
 /// Input needed to run the full PhotoAnalyzer processing pipeline.
 nonisolated struct AnalysisPipelineRequest: Sendable {
@@ -203,7 +204,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
 
     private func logSecurityScopedAccessNotRequiredOrGranted(for url: URL) {
         #if DEBUG
-        print("Security-scoped access was not required or not granted for: \(url.path)")
+        AppLogger.security.debug("Security-scoped access was not required or not granted for: \(url.path, privacy: .private)")
         #endif
     }
 

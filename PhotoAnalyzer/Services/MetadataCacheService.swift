@@ -7,6 +7,7 @@
 
 import Foundation
 import GRDB
+import OSLog
 
 nonisolated struct MetadataCacheUsage: Equatable, Sendable {
     let byteCount: Int64
@@ -59,7 +60,7 @@ nonisolated final class MetadataCacheService: @unchecked Sendable {
             databaseQueue = queue
         } catch {
             #if DEBUG
-            print("Metadata cache disabled: \(error.localizedDescription)")
+            AppLogger.cache.warning("Metadata cache disabled: \(error.localizedDescription, privacy: .public)")
             #endif
             databaseQueue = nil
         }
@@ -117,7 +118,7 @@ nonisolated final class MetadataCacheService: @unchecked Sendable {
             }
         } catch {
             #if DEBUG
-            print("Metadata cache read failed: \(error.localizedDescription)")
+            AppLogger.cache.error("Metadata cache read failed: \(error.localizedDescription, privacy: .public)")
             #endif
             return nil
         }
@@ -176,7 +177,7 @@ nonisolated final class MetadataCacheService: @unchecked Sendable {
             }
         } catch {
             #if DEBUG
-            print("Metadata cache write failed: \(error.localizedDescription)")
+            AppLogger.cache.error("Metadata cache write failed: \(error.localizedDescription, privacy: .public)")
             #endif
         }
     }
@@ -218,7 +219,7 @@ nonisolated final class MetadataCacheService: @unchecked Sendable {
             }
         } catch {
             #if DEBUG
-            print("Metadata cache clear failed: \(error.localizedDescription)")
+            AppLogger.cache.error("Metadata cache clear failed: \(error.localizedDescription, privacy: .public)")
             #endif
         }
     }

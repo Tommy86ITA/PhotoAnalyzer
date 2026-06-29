@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OSLog
 
 /// Lightweight utility used to measure execution times of analysis phases.
 /// Logs are emitted only in DEBUG builds.
@@ -26,7 +27,7 @@ enum PerformanceLogger
 
 		#if DEBUG
 		let formattedElapsed = String(format: "%.2f", elapsed)
-		print("⏱️ \(label): \(formattedElapsed)s")
+		AppLogger.performance.debug("\(label, privacy: .public): \(formattedElapsed, privacy: .public)s")
 		#endif
 
 		return result
@@ -47,7 +48,7 @@ enum PerformanceLogger
 
 		#if DEBUG
 		let formattedElapsed = String(format: "%.2f", elapsed)
-		print("⏱️ \(label): \(formattedElapsed)s")
+		AppLogger.performance.debug("\(label, privacy: .public): \(formattedElapsed, privacy: .public)s")
 		#endif
 
 		return result

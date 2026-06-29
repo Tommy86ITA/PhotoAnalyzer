@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OSLog
 
 /// Stores user-selected output folders in a form that can be resolved across launches.
 enum OutputFolderBookmarkStore {
@@ -32,7 +33,7 @@ enum OutputFolderBookmarkStore {
             )
             return isStale ? nil : url
         } catch {
-            print("Failed to resolve output folder bookmark: \(error)")
+            AppLogger.security.error("Failed to resolve output folder bookmark: \(error.localizedDescription, privacy: .public)")
             return nil
         }
     }

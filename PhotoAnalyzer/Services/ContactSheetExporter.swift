@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OSLog
 
 /// Exports a visual contact sheet and matching TSV index for analyzed photos.
 final class ContactSheetExporter {
@@ -119,8 +120,8 @@ final class ContactSheetExporter {
 			)
 		)
 
-		print("Contact sheet pages: \(sheetCount)")
-		print(exportSummary.logMessage)
+		AppLogger.contactSheet.info("Contact sheet pages: \(sheetCount, privacy: .public)")
+		AppLogger.contactSheet.info("\(exportSummary.logMessage, privacy: .public)")
 	}
 
 	nonisolated private func columnCount(for photoCount: Int) throws -> Int {
