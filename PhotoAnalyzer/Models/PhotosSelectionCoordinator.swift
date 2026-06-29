@@ -36,6 +36,17 @@ final class PhotosSelectionCoordinator {
     /// Album loading error shown in the album picker sheet.
     var albumLoadingError: AppErrorInfo?
 
+    /// Currently running asset load task, if any.
+    @ObservationIgnored private var assetLoadingTask: Task<Void, Never>?
+
+    /// Currently running album load task, if any.
+    @ObservationIgnored private var albumLoadingTask: Task<Void, Never>?
+
+    deinit {
+        assetLoadingTask?.cancel()
+        albumLoadingTask?.cancel()
+    }
+
     /// Clears manual Photos asset selection state.
     func resetSelection() {
         selectedAssetIdentifiers = []
@@ -50,22 +61,24 @@ final class PhotosSelectionCoordinator {
 
         isLoadingAssets = true
         assetLoadingError = nil
+        assetLoadingTask?.cancel()
 
-        Task {
+        let task = Task { [weak self] in
             defer {
-                isLoadingAssets = false
+                self?.isLoadingAssets = false
+                self?.assetLoadingTask = nil
             }
 
             do {
                 let assets = try await PhotosLibraryAssetBrowserService().fetchImageAssets()
-                guard !Task.isCancelled else {
+                guard let self, !Task.isCancelled else {
                     return
                 }
 
                 self.assets = assets
                 assetLoadingError = nil
             } catch {
-                guard !Task.isCancelled else {
+                guard let self, !Task.isCancelled else {
                     return
                 }
 
@@ -73,6 +86,7 @@ final class PhotosSelectionCoordinator {
                 assetLoadingError = AppErrorInfo.exportFailure(error)
             }
         }
+        assetLoadingTask = task
     }
 
     /// Toggles a PhotoKit asset in the manual Photos selection sheet.
@@ -126,22 +140,24 @@ final class PhotosSelectionCoordinator {
 
         isLoadingAlbums = true
         albumLoadingError = nil
+        albumLoadingTask?.cancel()
 
-        Task {
+        let task = Task { [weak self] in
             defer {
-                isLoadingAlbums = false
+                self?.isLoadingAlbums = false
+                self?.albumLoadingTask = nil
             }
 
             do {
                 let albums = try await PhotosLibraryAlbumService().fetchAlbums()
-                guard !Task.isCancelled else {
+                guard let self, !Task.isCancelled else {
                     return
                 }
 
                 self.albums = albums
                 albumLoadingError = nil
             } catch {
-                guard !Task.isCancelled else {
+                guard let self, !Task.isCancelled else {
                     return
                 }
 
@@ -149,6 +165,7 @@ final class PhotosSelectionCoordinator {
                 albumLoadingError = AppErrorInfo.exportFailure(error)
             }
         }
+        albumLoadingTask = task
     }
 
     /// Toggles an asset while preserving the rest of the selection.

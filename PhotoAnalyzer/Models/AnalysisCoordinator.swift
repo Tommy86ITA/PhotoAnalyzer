@@ -52,6 +52,11 @@ final class AnalysisCoordinator {
     /// The currently running supported file count task, if any.
     @ObservationIgnored private var supportedFileCountTask: Task<Void, Never>?
 
+    deinit {
+        analysisTask?.cancel()
+        supportedFileCountTask?.cancel()
+    }
+
     /// Stores a folder source and starts counting supported files.
     func selectFolder(_ url: URL, includeSubfolders: Bool) {
         selectedFolderURL = url
@@ -235,8 +240,12 @@ final class AnalysisCoordinator {
 
         switch selectedAnalysisSource {
         case .folder(let source):
-            let task = Task {
-                await analyzeSelectedFolderFiles(
+            let task = Task { [weak self] in
+                guard let self else {
+                    return
+                }
+
+                await self.analyzeSelectedFolderFiles(
                     in: source.folderURL,
                     outputFolderURL: outputFolderURL,
                     includeSubfolders: includeSubfolders,
@@ -246,8 +255,12 @@ final class AnalysisCoordinator {
             }
             analysisTask = task
         case .photosLibrary(let selection):
-            let task = Task {
-                await analyzePhotoKitSelection(
+            let task = Task { [weak self] in
+                guard let self else {
+                    return
+                }
+
+                await self.analyzePhotoKitSelection(
                     selection,
                     outputFolderURL: outputFolderURL,
                     metadataCacheMaximumSizeMB: metadataCacheMaximumSizeMB,
@@ -385,8 +398,8 @@ final class AnalysisCoordinator {
                 metadataCacheMaximumSizeMB: metadataCacheMaximumSizeMB,
                 exportDiagnosticReports: exportDiagnosticReports,
                 progressHandler: { progress in
-                    Task { @MainActor in
-                        self.applyPipelineProgress(progress)
+                    Task { [weak self] in
+                        await self?.applyPipelineProgress(progress)
                     }
                 }
             )
@@ -438,8 +451,8 @@ final class AnalysisCoordinator {
                 metadataCacheMaximumSizeMB: metadataCacheMaximumSizeMB,
                 exportDiagnosticReports: exportDiagnosticReports,
                 progressHandler: { progress in
-                    Task { @MainActor in
-                        self.applyPipelineProgress(progress)
+                    Task { [weak self] in
+                        await self?.applyPipelineProgress(progress)
                     }
                 }
             )
@@ -466,10 +479,15 @@ final class AnalysisCoordinator {
         isCountingSupportedFiles = true
         analysisPhase = .scanningFiles
 
-        let task = Task {
+        let task = Task { [weak self] in
+            defer {
+                self?.isCountingSupportedFiles = false
+                self?.supportedFileCountTask = nil
+            }
+
             do {
                 let count = try await PhotosLibraryCountService().countImageAssets(in: selection)
-                guard !Task.isCancelled else {
+                guard let self, !Task.isCancelled else {
                     return
                 }
 
@@ -478,7 +496,7 @@ final class AnalysisCoordinator {
                 datasetState.analysisStatus = .sourceSelected
                 analysisPhase = count > 0 ? .ready : .noSupportedFiles
             } catch {
-                guard !Task.isCancelled else {
+                guard let self, !Task.isCancelled else {
                     return
                 }
 
@@ -497,9 +515,6 @@ final class AnalysisCoordinator {
                 )
                 analysisPhase = .failed
             }
-
-            isCountingSupportedFiles = false
-            supportedFileCountTask = nil
         }
         supportedFileCountTask = task
     }
@@ -513,7 +528,7 @@ final class AnalysisCoordinator {
         isCountingSupportedFiles = true
         analysisPhase = .scanningFiles
 
-        let task = Task {
+        let task = Task { [weak self] in
             let countTask = Task<Int, Never>.detached(priority: .utility) {
                 SupportedFileCountService()
                     .countSupportedFiles(in: folderURL, includeSubfolders: includeSubfolders)
@@ -524,7 +539,7 @@ final class AnalysisCoordinator {
                 countTask.cancel()
             }
 
-            guard !Task.isCancelled else {
+            guard let self, !Task.isCancelled else {
                 return
             }
 
