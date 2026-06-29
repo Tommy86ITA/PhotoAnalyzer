@@ -81,6 +81,8 @@ final class FolderAnalysisService {
 	/// Builds `PhotoInfo` values and rich export metadata for supported image files.
 	/// - Parameters:
 	///   - fileURLs: Supported image files to analyze in stable order.
+	///   - metadataCacheSourceKeyByFileURL: Cache source keys keyed by exported file URL.
+	///   - metadataCacheMaximumSizeMB: Maximum metadata cache size in megabytes.
 	///   - progressHandler: Optional progress callback for processed metadata files.
 	/// - Returns: Photo information models plus export metadata records.
 	nonisolated func analyzeFilesWithExportMetadata(

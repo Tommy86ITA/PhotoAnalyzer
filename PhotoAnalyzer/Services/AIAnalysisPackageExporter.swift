@@ -47,6 +47,7 @@ final class AIAnalysisPackageExporter {
 	///   - sourceFileURLs: The analyzed source image files in contact sheet order.
 	///   - statistics: The aggregate statistics produced from the photos.
 	///   - paths: The package paths used for the exported files.
+	///   - displayInfoByFileURL: Display names and source labels keyed by source file URL.
 	///   - progressHandler: Optional progress callback for written package data files.
 	/// - Returns: The package paths used by subsequent export phases.
 	/// - Throws: File system or JSON encoding errors.
@@ -103,6 +104,7 @@ final class AIAnalysisPackageExporter {
 	/// - Parameters:
 	///   - metadata: ExifTool metadata records.
 	///   - sourceFileURLs: The analyzed source image files in contact sheet order.
+	///   - displayInfoByFileURL: Display names and source labels keyed by source file URL.
 	/// - Returns: Metadata records augmented with contact sheet indexes.
 	nonisolated private func metadataWithThumbnailIndexes(
 		_ metadata: [ExportPhotoMetadata],
@@ -182,6 +184,7 @@ final class AIAnalysisPackageExporter {
 	///   - folderURL: The original folder URL analyzed by PhotoAnalyzer.
 	///   - sourceFileURLs: The analyzed source image files in contact sheet order.
 	///   - paths: The package paths created by `exportDataFiles`.
+	///   - displayInfoByFileURL: Display names and source labels keyed by source file URL.
 	///   - progressHandler: Optional progress callback for thumbnail/contact sheet export.
 	/// - Throws: File system or image encoding errors.
 	nonisolated func exportContactSheet(

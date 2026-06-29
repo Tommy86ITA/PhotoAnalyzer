@@ -42,6 +42,7 @@ final class ContactSheetExporter {
 	///   - folderURL: The original folder URL analyzed by PhotoAnalyzer.
 	///   - fileURLs: The analyzed image files in stable visual order.
 	///   - paths: The output AI package paths.
+	///   - displayInfoByFileURL: Display names and source labels keyed by source file URL.
 	///   - progressHandler: Optional progress callback for contact sheet export work.
 	/// - Throws: File system or image encoding errors.
 	nonisolated func exportContactSheet(
