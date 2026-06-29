@@ -167,9 +167,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $isShowingPhotosAlbumPicker) {
             PhotosAlbumPickerView(
-                albums: coordinator.photosAlbums,
-                isLoading: coordinator.isLoadingPhotosAlbums,
-                error: coordinator.photosAlbumLoadingError,
+                albums: coordinator.photosSelection.albums,
+                isLoading: coordinator.photosSelection.isLoadingAlbums,
+                error: coordinator.photosSelection.albumLoadingError,
                 selectAlbum: selectPhotosAlbum,
                 refresh: coordinator.loadPhotosAlbums,
                 dismiss: { isShowingPhotosAlbumPicker = false }
@@ -177,10 +177,10 @@ struct ContentView: View {
         }
         .sheet(isPresented: $isShowingPhotosAssetPicker) {
             PhotosAssetPickerView(
-                assets: coordinator.photosAssets,
-                isLoading: coordinator.isLoadingPhotosAssets,
-                error: coordinator.photosAssetLoadingError,
-                selectedAssetIdentifiers: coordinator.selectedPhotoAssetIdentifiers,
+                assets: coordinator.photosSelection.assets,
+                isLoading: coordinator.photosSelection.isLoadingAssets,
+                error: coordinator.photosSelection.assetLoadingError,
+                selectedAssetIdentifiers: coordinator.photosSelection.selectedAssetIdentifiers,
                 toggleAsset: toggleSelectedPhotoAsset,
                 selectAssets: selectPhotoAssets,
                 clearSelection: clearSelectedPhotoAssets,
