@@ -61,24 +61,31 @@ nonisolated struct PhotosAnalysisPipelineService: Sendable {
     typealias MaterializeSelection = @Sendable (
         PhotosSelection,
         PhotosLibraryExportOptions,
-        PhotosMaterializationProgressHandler?
+        Int,
+        PhotosMaterializationProgressHandler?,
+        PhotosMaterializedAssetHandler?
     ) async throws -> PhotosMaterializationResult
 
     private let materializeSelection: MaterializeSelection
     private let pipelineService: AnalysisPipelineService
+    private let progressiveAnalysisEnabled: Bool
 
     init(
-        materializeSelection: @escaping MaterializeSelection = { selection, options, progressHandler in
+        materializeSelection: @escaping MaterializeSelection = { selection, options, cacheSizeMB, progressHandler, assetHandler in
             try await PhotosLibraryAssetExporter().export(
                 selection: selection,
                 options: options,
-                progressHandler: progressHandler
+                metadataCacheMaximumSizeMB: cacheSizeMB,
+                progressHandler: progressHandler,
+                materializedAssetHandler: assetHandler
             )
         },
-        pipelineService: AnalysisPipelineService = AnalysisPipelineService()
+        pipelineService: AnalysisPipelineService = AnalysisPipelineService(),
+        progressiveAnalysisEnabled: Bool = true
     ) {
         self.materializeSelection = materializeSelection
         self.pipelineService = pipelineService
+        self.progressiveAnalysisEnabled = progressiveAnalysisEnabled
     }
 
     func run(
@@ -99,13 +106,50 @@ nonisolated struct PhotosAnalysisPipelineService: Sendable {
             allocatedUnitCount: 1,
             phase: .preparingPhotos
         )
-        let materializationResult = try await materializeSelection(
-            request.selection,
-            request.exportOptions,
-            { snapshot in
-                progressHandler?(preparationMapper.map(snapshot))
+        let materializationResult: PhotosMaterializationResult
+        let progressiveAnalysisResult: FolderAnalysisResult?
+
+        if progressiveAnalysisEnabled {
+            let progressiveAnalysis = try ProgressivePhotosAnalysisSession(
+                metadataCacheMaximumSizeMB: request.metadataCacheMaximumSizeMB
+            )
+            do {
+                materializationResult = try await materializeSelection(
+                    request.selection,
+                    request.exportOptions,
+                    request.metadataCacheMaximumSizeMB,
+                    { snapshot in
+                        progressHandler?(preparationMapper.map(snapshot))
+                    },
+                    { sourceIndex, asset in
+                        await progressiveAnalysis.analyze(
+                            sourceIndex: sourceIndex,
+                            asset: asset
+                        )
+                    }
+                )
+            } catch {
+                await progressiveAnalysis.close()
+                throw error
             }
-        )
+
+            await progressiveAnalysis.analyzeRemaining(materializationResult.assets)
+            progressiveAnalysisResult = await progressiveAnalysis.finish(
+                orderedAssets: materializationResult.assets
+            )
+        } else {
+            materializationResult = try await materializeSelection(
+                request.selection,
+                request.exportOptions,
+                request.metadataCacheMaximumSizeMB,
+                { snapshot in
+                    progressHandler?(preparationMapper.map(snapshot))
+                },
+                nil
+            )
+            progressiveAnalysisResult = nil
+        }
+
         defer {
             materializationResult.workspace.cleanup()
         }
@@ -121,6 +165,7 @@ nonisolated struct PhotosAnalysisPipelineService: Sendable {
                 metadataCacheMaximumSizeMB: request.metadataCacheMaximumSizeMB,
                 exportDiagnosticReports: request.exportDiagnosticReports
             ),
+            preanalyzedResult: progressiveAnalysisResult,
             progressHandler: progressHandler
         )
 

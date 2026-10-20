@@ -64,6 +64,17 @@ struct AnalysisSourceTests {
         #expect(PhotosNetworkAccessPolicy.downloadMissingOriginals.allowsNetworkAccess)
     }
 
+    @Test func photosDownloadConcurrencyClampsPersistedValues() {
+        #expect(PhotosDownloadConcurrency.clamped(0) == 1)
+        #expect(PhotosDownloadConcurrency.clamped(3) == 3)
+        #expect(PhotosDownloadConcurrency.clamped(99) == 6)
+
+        #expect(
+            PhotosLibraryExportOptions(maximumConcurrentDownloads: 99)
+                .maximumConcurrentDownloads == 6
+        )
+    }
+
     @Test func materializedPhotosAssetDisplayInfoUsesStablePhotosURI() {
         let asset = MaterializedPhotosAsset(
             assetLocalIdentifier: "ABCD/L0/001",

@@ -52,6 +52,9 @@ final class AnalysisCoordinator {
     /// The currently running supported file count task, if any.
     @ObservationIgnored private var supportedFileCountTask: Task<Void, Never>?
 
+    /// Keeps the selected output folder accessible after the export operation finishes.
+    @ObservationIgnored private let outputFolderAccess = SecurityScopedResourceAccess()
+
     deinit {
         analysisTask?.cancel()
         supportedFileCountTask?.cancel()
@@ -209,6 +212,11 @@ final class AnalysisCoordinator {
         )
     }
 
+    /// Keeps the selected output folder available for previews and Finder actions.
+    func updateOutputFolderAccess(to url: URL) {
+        outputFolderAccess.update(to: url)
+    }
+
     /// Clears package-specific state after output destination changes.
     func resetGeneratedPackageState() {
         statistics = nil
@@ -222,6 +230,7 @@ final class AnalysisCoordinator {
         outputFolderURL: URL,
         includeSubfolders: Bool,
         metadataCacheMaximumSizeMB: Int,
+        maximumConcurrentPhotosDownloads: Int,
         exportDiagnosticReports: Bool
     ) {
         guard !isAnalyzing, !isCountingSupportedFiles else {
@@ -264,6 +273,7 @@ final class AnalysisCoordinator {
                     selection,
                     outputFolderURL: outputFolderURL,
                     metadataCacheMaximumSizeMB: metadataCacheMaximumSizeMB,
+                    maximumConcurrentDownloads: maximumConcurrentPhotosDownloads,
                     exportDiagnosticReports: exportDiagnosticReports
                 )
             }
@@ -397,7 +407,7 @@ final class AnalysisCoordinator {
                 expectedSupportedFileCount: expectedSupportedFileCount,
                 metadataCacheMaximumSizeMB: metadataCacheMaximumSizeMB,
                 exportDiagnosticReports: exportDiagnosticReports,
-                progressHandler: { progress in
+                progressHandler: { [weak self] progress in
                     Task { [weak self] in
                         await self?.applyPipelineProgress(progress)
                     }
@@ -425,6 +435,7 @@ final class AnalysisCoordinator {
         _ selection: PhotosSelection,
         outputFolderURL: URL,
         metadataCacheMaximumSizeMB: Int,
+        maximumConcurrentDownloads: Int,
         exportDiagnosticReports: Bool
     ) async {
         guard !isAnalyzing else {
@@ -449,8 +460,9 @@ final class AnalysisCoordinator {
                 outputFolderURL: outputFolderURL,
                 datasetName: datasetName,
                 metadataCacheMaximumSizeMB: metadataCacheMaximumSizeMB,
+                maximumConcurrentDownloads: maximumConcurrentDownloads,
                 exportDiagnosticReports: exportDiagnosticReports,
-                progressHandler: { progress in
+                progressHandler: { [weak self] progress in
                     Task { [weak self] in
                         await self?.applyPipelineProgress(progress)
                     }

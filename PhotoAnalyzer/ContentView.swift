@@ -35,6 +35,10 @@ struct ContentView: View {
     /// Whether Photos Library analysis may download missing iCloud originals.
     @AppStorage("photos.downloadMissingOriginals") private var downloadMissingPhotosOriginals = false
 
+    /// Maximum number of iCloud Photos originals downloaded at the same time.
+    @AppStorage("photos.maximumConcurrentDownloads")
+    private var maximumConcurrentPhotosDownloads = PhotosDownloadConcurrency.recommended
+
     /// Maximum disk space for cached ExifTool metadata.
     @AppStorage("metadataCache.maximumSizeMB") private var metadataCacheMaximumSizeMB = MetadataCacheSizeLimit.mb512.rawValue
 
@@ -101,6 +105,7 @@ struct ContentView: View {
             SettingsView(
                 useUnmodifiedPhotosOriginals: $useUnmodifiedPhotosOriginals,
                 downloadMissingPhotosOriginals: $downloadMissingPhotosOriginals,
+                maximumConcurrentPhotosDownloads: $maximumConcurrentPhotosDownloads,
                 metadataCacheMaximumSizeMB: $metadataCacheMaximumSizeMB,
                 exportDiagnosticReports: $exportDiagnosticReports,
                 metadataCacheUsage: metadataCacheUsage,
@@ -266,6 +271,8 @@ struct ContentView: View {
             return
         }
 
+        coordinator.updateOutputFolderAccess(to: url)
+
         do {
             try DefaultOutputFolderProvider.ensureOutputFolderExists(at: url)
             outputFolderBookmarkData = try OutputFolderBookmarkStore.bookmarkData(for: url)
@@ -282,6 +289,7 @@ struct ContentView: View {
     private func configureOutputFolder() {
         selectedOutputFolderURL = OutputFolderBookmarkStore.resolveBookmarkData(outputFolderBookmarkData)
             ?? DefaultOutputFolderProvider.defaultOutputFolderURL()
+        coordinator.updateOutputFolderAccess(to: selectedOutputFolderURL)
 
         do {
             try DefaultOutputFolderProvider.ensureOutputFolderExists(at: selectedOutputFolderURL)
@@ -304,6 +312,7 @@ struct ContentView: View {
             outputFolderURL: selectedOutputFolderURL,
             includeSubfolders: includeSubfolders,
             metadataCacheMaximumSizeMB: metadataCacheMaximumSizeMB,
+            maximumConcurrentPhotosDownloads: maximumConcurrentPhotosDownloads,
             exportDiagnosticReports: exportDiagnosticReports
         )
     }

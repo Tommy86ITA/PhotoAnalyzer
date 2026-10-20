@@ -5,7 +5,9 @@
 //  Created by Thomas Amaranto on 19/06/2026.
 //
 
+import AppKit
 import Foundation
+import OSLog
 
 #if canImport(Photos)
 @preconcurrency import Photos
@@ -62,9 +64,14 @@ nonisolated struct PhotosAssetExportFailure: Equatable, Sendable {
 /// Export limits used to avoid accidental whole-library materialization without confirmation.
 nonisolated struct PhotosLibraryExportOptions: Equatable, Sendable {
     let maximumAssetCount: Int?
+    let maximumConcurrentDownloads: Int
 
-    init(maximumAssetCount: Int? = nil) {
+    init(
+        maximumAssetCount: Int? = nil,
+        maximumConcurrentDownloads: Int = PhotosDownloadConcurrency.recommended
+    ) {
         self.maximumAssetCount = maximumAssetCount
+        self.maximumConcurrentDownloads = PhotosDownloadConcurrency.clamped(maximumConcurrentDownloads)
     }
 
     static let unrestricted = PhotosLibraryExportOptions()
@@ -72,6 +79,7 @@ nonisolated struct PhotosLibraryExportOptions: Equatable, Sendable {
 
 /// Progress emitted while Photos assets are exported into the temporary workspace.
 typealias PhotosMaterializationProgressHandler = @Sendable (ProgressSnapshot) -> Void
+typealias PhotosMaterializedAssetHandler = @Sendable (Int, MaterializedPhotosAsset) async throws -> Void
 
 /// Errors produced while preparing Photos Library assets for file-based analysis.
 nonisolated enum PhotosLibraryAssetExporterError: LocalizedError, Equatable {
@@ -114,14 +122,18 @@ final class PhotosLibraryAssetExporter {
         try await export(
             selection: selection,
             options: .unrestricted,
-            progressHandler: nil
+            metadataCacheMaximumSizeMB: MetadataCacheSizeLimit.mb512.rawValue,
+            progressHandler: nil,
+            materializedAssetHandler: nil
         )
     }
 
     func export(
         selection: PhotosSelection,
         options: PhotosLibraryExportOptions = .unrestricted,
-        progressHandler: PhotosMaterializationProgressHandler?
+        metadataCacheMaximumSizeMB: Int = MetadataCacheSizeLimit.mb512.rawValue,
+        progressHandler: PhotosMaterializationProgressHandler?,
+        materializedAssetHandler: PhotosMaterializedAssetHandler? = nil
     ) async throws -> PhotosMaterializationResult {
         #if canImport(Photos)
         try await requestReadAccessIfNeeded()
@@ -133,8 +145,10 @@ final class PhotosLibraryAssetExporter {
                 assets,
                 selection: selection,
                 options: options,
+                metadataCacheMaximumSizeMB: metadataCacheMaximumSizeMB,
                 workspaceFactory: workspaceFactory,
-                progressHandler: progressHandler
+                progressHandler: progressHandler,
+                materializedAssetHandler: materializedAssetHandler
             )
         }
         #else
@@ -161,13 +175,233 @@ private extension PhotosLibraryAssetExporter {
 }
 
 #if canImport(Photos)
+private enum PendingPhotosAssetExportKind: @unchecked Sendable {
+    case original(PHAssetResource)
+    case preview(PHAsset)
+}
+
+private struct PendingPhotosAssetExport: @unchecked Sendable {
+    let sourceIndex: Int
+    let kind: PendingPhotosAssetExportKind
+    let materializedAsset: MaterializedPhotosAsset
+}
+
+private struct NetworkPhotosAssetExportResult: Sendable {
+    let sourceIndex: Int
+    let assetLocalIdentifier: String
+    let materializedAsset: MaterializedPhotosAsset?
+    let failureReason: String?
+}
+
+private enum PhotosPreviewRequestError: LocalizedError {
+    case networkAccessRequired
+    case cancelled
+    case unavailable
+    case couldNotEncode
+
+    var errorDescription: String? {
+        switch self {
+        case .networkAccessRequired:
+            "Preview is stored in iCloud and network access is disabled."
+        case .cancelled:
+            "Preview request was cancelled."
+        case .unavailable:
+            "Photos could not create a preview for this asset."
+        case .couldNotEncode:
+            "PhotoAnalyzer could not encode the Photos preview."
+        }
+    }
+}
+
+nonisolated private final class PhotosDownloadProgressTracker: @unchecked Sendable {
+    private static let unitsPerAsset: Double = 1_000
+
+    private let lock = NSLock()
+    private let completedBeforeDownloads: Int
+    private let totalAssetCount: Int
+    private let progressHandler: PhotosMaterializationProgressHandler?
+    private var fractionBySourceIndex: [Int: Double] = [:]
+
+    init(
+        completedBeforeDownloads: Int,
+        totalAssetCount: Int,
+        progressHandler: PhotosMaterializationProgressHandler?
+    ) {
+        self.completedBeforeDownloads = completedBeforeDownloads
+        self.totalAssetCount = totalAssetCount
+        self.progressHandler = progressHandler
+    }
+
+    func update(sourceIndex: Int, fractionCompleted: Double) {
+        let snapshot: ProgressSnapshot
+
+        lock.lock()
+        let clampedFraction = min(max(fractionCompleted, 0), 1)
+        fractionBySourceIndex[sourceIndex] = max(
+            fractionBySourceIndex[sourceIndex] ?? 0,
+            clampedFraction
+        )
+        let completedAssetCount = Double(completedBeforeDownloads)
+            + fractionBySourceIndex.values.reduce(0, +)
+        snapshot = ProgressSnapshot(
+            completedUnitCount: Int64((completedAssetCount * Self.unitsPerAsset).rounded()),
+            totalUnitCount: Int64(max(1, totalAssetCount)) * Int64(Self.unitsPerAsset),
+            message: "Downloading required Photos data from iCloud..."
+        )
+        lock.unlock()
+
+        progressHandler?(snapshot)
+    }
+
+    func complete(sourceIndex: Int) {
+        update(sourceIndex: sourceIndex, fractionCompleted: 1)
+    }
+}
+
+nonisolated private final class PhotosResourceRequestState: @unchecked Sendable {
+    private let lock = NSLock()
+    private let resourceManager: PHAssetResourceManager
+    private var requestID = PHInvalidAssetResourceDataRequestID
+    private var cancellationRequested = false
+
+    init(resourceManager: PHAssetResourceManager) {
+        self.resourceManager = resourceManager
+    }
+
+    func register(requestID: PHAssetResourceDataRequestID) {
+        lock.lock()
+        self.requestID = requestID
+        let shouldCancel = cancellationRequested && requestID != PHInvalidAssetResourceDataRequestID
+        lock.unlock()
+
+        if shouldCancel {
+            resourceManager.cancelDataRequest(requestID)
+        }
+    }
+
+    func cancel() {
+        lock.lock()
+        cancellationRequested = true
+        let requestID = requestID
+        lock.unlock()
+
+        if requestID != PHInvalidAssetResourceDataRequestID {
+            resourceManager.cancelDataRequest(requestID)
+        }
+    }
+}
+
+nonisolated private final class PhotosImageRequestState: @unchecked Sendable {
+    private let lock = NSLock()
+    private let imageManager: PHImageManager
+    private var requestID = PHInvalidImageRequestID
+    private var cancellationRequested = false
+
+    init(imageManager: PHImageManager) {
+        self.imageManager = imageManager
+    }
+
+    func register(requestID: PHImageRequestID) {
+        lock.lock()
+        self.requestID = requestID
+        let shouldCancel = cancellationRequested && requestID != PHInvalidImageRequestID
+        lock.unlock()
+
+        if shouldCancel {
+            imageManager.cancelImageRequest(requestID)
+        }
+    }
+
+    func cancel() {
+        lock.lock()
+        cancellationRequested = true
+        let requestID = requestID
+        lock.unlock()
+
+        if requestID != PHInvalidImageRequestID {
+            imageManager.cancelImageRequest(requestID)
+        }
+    }
+}
+
+nonisolated private final class PhotosPreviewContinuation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<NSImage, Error>?
+
+    init(_ continuation: CheckedContinuation<NSImage, Error>) {
+        self.continuation = continuation
+    }
+
+    func resume(with result: Result<NSImage, Error>) {
+        lock.lock()
+        guard let continuation else {
+            lock.unlock()
+            return
+        }
+        self.continuation = nil
+        lock.unlock()
+        continuation.resume(with: result)
+    }
+}
+
+nonisolated private final class PhotosResourceFileWriter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var fileHandle: FileHandle?
+    private var storedError: Error?
+
+    init(destinationURL: URL, fileManager: FileManager = .default) throws {
+        guard fileManager.createFile(atPath: destinationURL.path, contents: nil) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        fileHandle = try FileHandle(forWritingTo: destinationURL)
+    }
+
+    @discardableResult
+    func append(_ data: Data) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard storedError == nil, let fileHandle else {
+            return false
+        }
+
+        do {
+            try fileHandle.write(contentsOf: data)
+            return true
+        } catch {
+            storedError = error
+            return false
+        }
+    }
+
+    func finish() -> Error? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if let fileHandle {
+            do {
+                try fileHandle.close()
+            } catch where storedError == nil {
+                storedError = error
+            } catch {
+                // Preserve the first write error.
+            }
+            self.fileHandle = nil
+        }
+
+        return storedError
+    }
+}
+
 private extension PhotosLibraryAssetExporter {
     static func exportAuthorizedAssets(
         _ assets: [PHAsset],
         selection: PhotosSelection,
         options: PhotosLibraryExportOptions,
+        metadataCacheMaximumSizeMB: Int,
         workspaceFactory: @Sendable () throws -> TemporaryAssetWorkspace,
-        progressHandler: PhotosMaterializationProgressHandler?
+        progressHandler: PhotosMaterializationProgressHandler?,
+        materializedAssetHandler: PhotosMaterializedAssetHandler?
     ) async throws -> PhotosMaterializationResult {
         if let maximumAssetCount = options.maximumAssetCount,
            assets.count > maximumAssetCount {
@@ -178,32 +412,79 @@ private extension PhotosLibraryAssetExporter {
         }
 
         let workspace = try workspaceFactory()
-        var exportedAssets: [MaterializedPhotosAsset] = []
+        let normalizedCacheLimit = MetadataCacheSizeLimit.normalizedRawValue(metadataCacheMaximumSizeMB)
+        let metadataCacheMaximumSizeBytes = MetadataCacheSizeLimit(rawValue: normalizedCacheLimit)?.byteCount
+            ?? MetadataCacheSizeLimit.mb512.byteCount
+        let metadataCacheService = MetadataCacheService()
+        let exifToolService = ExifToolService()
+        var shouldCleanupWorkspace = true
+        defer {
+            if shouldCleanupWorkspace {
+                workspace.cleanup()
+            }
+        }
+
+        var exportedAssetsByIndex: [Int: MaterializedPhotosAsset] = [:]
+        var pendingNetworkExports: [PendingPhotosAssetExport] = []
         var skippedAssets: [PhotosAssetExportFailure] = []
-        exportedAssets.reserveCapacity(assets.count)
+        var completedAssetCount = 0
+        exportedAssetsByIndex.reserveCapacity(assets.count)
+        pendingNetworkExports.reserveCapacity(assets.count)
+
+        var estimatedTemporaryBytes: Int64 = 0
+        for asset in assets where asset.mediaType == .image {
+            let sourceKey = MetadataCacheSourceKey.photosAsset(
+                localIdentifier: asset.localIdentifier,
+                representation: selection.representation,
+                modificationDate: asset.modificationDate
+            )
+            let cachedData = metadataCacheService.cachedMetadataData(
+                for: sourceKey,
+                maximumSizeBytes: metadataCacheMaximumSizeBytes
+            )
+            let usesPreview = cachedData.flatMap {
+                try? exifToolService.decodeAnalysisMetadata(from: $0)
+            } != nil
+            let assetEstimate = AnalysisDiskSpaceEstimator.temporaryBytes(
+                pixelWidth: asset.pixelWidth,
+                pixelHeight: asset.pixelHeight,
+                usesPreview: usesPreview
+            )
+            let sum = estimatedTemporaryBytes.addingReportingOverflow(assetEstimate)
+            estimatedTemporaryBytes = sum.overflow ? Int64.max : sum.partialValue
+        }
+        try DiskSpacePreflightService().requireAvailableSpace(
+            at: workspace.directoryURL,
+            requirement: DiskSpaceRequirement(
+                estimatedBytes: estimatedTemporaryBytes,
+                reserveBytes: AnalysisDiskSpaceEstimator.temporaryReserveBytes
+            )
+        )
 
         emitProgress(
             completedAssetCount: 0,
             totalAssetCount: assets.count,
-            message: "Preparing Photos assets...",
+            message: "Checking local Photos originals...",
             progressHandler: progressHandler
         )
 
+        // Probe every resource without network access first. This lets Photos serve originals
+        // retained in its local cache before any iCloud download can block the export queue.
         for (index, asset) in assets.enumerated() {
             try Task.checkCancellation()
 
             let localIdentifier = asset.localIdentifier
-            let completedAssetCount = index + 1
 
             guard asset.mediaType == .image else {
                 skippedAssets.append(PhotosAssetExportFailure(
                     assetLocalIdentifier: localIdentifier,
                     reason: "Only image assets are supported."
                 ))
+                completedAssetCount += 1
                 emitProgress(
                     completedAssetCount: completedAssetCount,
                     totalAssetCount: assets.count,
-                    message: "Preparing Photos assets...",
+                    message: "Checking local Photos originals...",
                     progressHandler: progressHandler
                 )
                 continue
@@ -214,63 +495,193 @@ private extension PhotosLibraryAssetExporter {
                     assetLocalIdentifier: localIdentifier,
                     reason: "No exportable image resource was found."
                 ))
+                completedAssetCount += 1
                 emitProgress(
                     completedAssetCount: completedAssetCount,
                     totalAssetCount: assets.count,
-                    message: "Preparing Photos assets...",
+                    message: "Checking local Photos originals...",
                     progressHandler: progressHandler
                 )
                 continue
             }
 
+            let metadataCacheSourceKey = MetadataCacheSourceKey.photosAsset(
+                localIdentifier: localIdentifier,
+                representation: selection.representation,
+                modificationDate: asset.modificationDate
+            )
+            let cachedMetadataData = metadataCacheService.cachedMetadataData(
+                for: metadataCacheSourceKey,
+                maximumSizeBytes: metadataCacheMaximumSizeBytes
+            )
+            let hasValidCachedMetadata = cachedMetadataData.flatMap {
+                try? exifToolService.decodeAnalysisMetadata(from: $0)
+            } != nil
             let destinationURL = workspace.fileURL(
-                preferredFilename: resource.originalFilename,
+                preferredFilename: hasValidCachedMetadata
+                    ? Self.previewFilename(for: resource.originalFilename)
+                    : resource.originalFilename,
                 fallbackBasename: Self.stableFallbackName(for: localIdentifier)
             )
+            let materializedAsset = MaterializedPhotosAsset(
+                assetLocalIdentifier: localIdentifier,
+                originalFilename: resource.originalFilename,
+                fileURL: destinationURL,
+                representation: selection.representation,
+                metadataCacheSourceKey: metadataCacheSourceKey
+            )
+
+            if hasValidCachedMetadata {
+                do {
+                    try await Self.writePreview(
+                        for: asset,
+                        representation: selection.representation,
+                        to: destinationURL,
+                        allowsNetworkAccess: false,
+                        progressHandler: nil
+                    )
+                    exportedAssetsByIndex[index] = materializedAsset
+                    try await materializedAssetHandler?(index, materializedAsset)
+                    completedAssetCount += 1
+                    emitProgress(
+                        completedAssetCount: completedAssetCount,
+                        totalAssetCount: assets.count,
+                        message: "Using cached metadata and Photos previews...",
+                        progressHandler: progressHandler
+                    )
+                } catch {
+                    try? FileManager.default.removeItem(at: destinationURL)
+
+                    if selection.allowsNetworkAccess && Self.requiresNetworkAccess(error) {
+                        pendingNetworkExports.append(PendingPhotosAssetExport(
+                            sourceIndex: index,
+                            kind: .preview(asset),
+                            materializedAsset: materializedAsset
+                        ))
+                    } else {
+                        skippedAssets.append(PhotosAssetExportFailure(
+                            assetLocalIdentifier: localIdentifier,
+                            reason: Self.exportFailureReason(for: error)
+                        ))
+                        completedAssetCount += 1
+                    }
+                }
+                continue
+            }
 
             do {
                 try await Self.write(
                     resource,
                     to: destinationURL,
-                    allowsNetworkAccess: selection.networkAccessPolicy.allowsNetworkAccess
+                    allowsNetworkAccess: false
                 )
-                exportedAssets.append(MaterializedPhotosAsset(
-                    assetLocalIdentifier: localIdentifier,
-                    originalFilename: resource.originalFilename,
-                    fileURL: destinationURL,
-                    representation: selection.representation,
-                    metadataCacheSourceKey: .photosAsset(
-                        localIdentifier: localIdentifier,
-                        representation: selection.representation,
-                        modificationDate: asset.modificationDate
-                    )
-                ))
+                exportedAssetsByIndex[index] = materializedAsset
+                try await materializedAssetHandler?(index, materializedAsset)
+                completedAssetCount += 1
+                emitProgress(
+                    completedAssetCount: completedAssetCount,
+                    totalAssetCount: assets.count,
+                    message: "Using local Photos originals...",
+                    progressHandler: progressHandler
+                )
             } catch {
                 try? FileManager.default.removeItem(at: destinationURL)
-                skippedAssets.append(PhotosAssetExportFailure(
-                    assetLocalIdentifier: localIdentifier,
-                    reason: Self.exportFailureReason(for: error)
-                ))
-            }
 
+                if selection.allowsNetworkAccess && Self.requiresNetworkAccess(error) {
+                    pendingNetworkExports.append(PendingPhotosAssetExport(
+                        sourceIndex: index,
+                        kind: .original(resource),
+                        materializedAsset: materializedAsset
+                    ))
+                } else {
+                    skippedAssets.append(PhotosAssetExportFailure(
+                        assetLocalIdentifier: localIdentifier,
+                        reason: Self.exportFailureReason(for: error)
+                    ))
+                    completedAssetCount += 1
+                    emitProgress(
+                        completedAssetCount: completedAssetCount,
+                        totalAssetCount: assets.count,
+                        message: "Checking local Photos originals...",
+                        progressHandler: progressHandler
+                    )
+                }
+            }
+        }
+
+        if !pendingNetworkExports.isEmpty {
             emitProgress(
                 completedAssetCount: completedAssetCount,
                 totalAssetCount: assets.count,
-                message: "Preparing Photos assets...",
+                message: "Downloading required Photos data from iCloud...",
                 progressHandler: progressHandler
             )
+
+            let downloadProgressTracker = PhotosDownloadProgressTracker(
+                completedBeforeDownloads: completedAssetCount,
+                totalAssetCount: assets.count,
+                progressHandler: progressHandler
+            )
+            let maximumConcurrentDownloads = min(
+                options.maximumConcurrentDownloads,
+                pendingNetworkExports.count
+            )
+            var nextPendingExportIndex = 0
+
+            try await withThrowingTaskGroup(of: NetworkPhotosAssetExportResult.self) { group in
+                for _ in 0..<maximumConcurrentDownloads {
+                    let pendingExport = pendingNetworkExports[nextPendingExportIndex]
+                    nextPendingExportIndex += 1
+                    group.addTask {
+                        try await Self.download(
+                            pendingExport,
+                            progressTracker: downloadProgressTracker
+                        )
+                    }
+                }
+
+                while let downloadResult = try await group.next() {
+                    if let materializedAsset = downloadResult.materializedAsset {
+                        exportedAssetsByIndex[downloadResult.sourceIndex] = materializedAsset
+                        try await materializedAssetHandler?(downloadResult.sourceIndex, materializedAsset)
+                    } else if let failureReason = downloadResult.failureReason {
+                        skippedAssets.append(PhotosAssetExportFailure(
+                            assetLocalIdentifier: downloadResult.assetLocalIdentifier,
+                            reason: failureReason
+                        ))
+                    }
+
+                    downloadProgressTracker.complete(sourceIndex: downloadResult.sourceIndex)
+
+                    if nextPendingExportIndex < pendingNetworkExports.count {
+                        let pendingExport = pendingNetworkExports[nextPendingExportIndex]
+                        nextPendingExportIndex += 1
+                        group.addTask {
+                            try await Self.download(
+                                pendingExport,
+                                progressTracker: downloadProgressTracker
+                            )
+                        }
+                    }
+                }
+            }
         }
 
+        let exportedAssets = exportedAssetsByIndex
+            .sorted { $0.key < $1.key }
+            .map(\.value)
+
         guard !exportedAssets.isEmpty else {
-            workspace.cleanup()
             throw PhotosLibraryAssetExporterError.noExportableAssets
         }
 
-        return PhotosMaterializationResult(
+        let result = PhotosMaterializationResult(
             assets: exportedAssets,
             skippedAssets: skippedAssets,
             workspace: workspace
         )
+        shouldCleanupWorkspace = false
+        return result
     }
 
     func requestReadAccessIfNeeded() async throws {
@@ -374,6 +785,92 @@ private extension PhotosLibraryAssetExporter {
         }
     }
 
+    static func previewFilename(for originalFilename: String?) -> String {
+        let basename = originalFilename.map {
+            URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent
+        } ?? "photos_asset"
+        return "\(basename)_preview.jpg"
+    }
+
+    static func writePreview(
+        for asset: PHAsset,
+        representation: PhotosAssetRepresentation,
+        to destinationURL: URL,
+        allowsNetworkAccess: Bool,
+        progressHandler: (@Sendable (Double) -> Void)?
+    ) async throws {
+        let image = try await requestPreview(
+            for: asset,
+            representation: representation,
+            allowsNetworkAccess: allowsNetworkAccess,
+            progressHandler: progressHandler
+        )
+
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let jpegData = NSBitmapImageRep(cgImage: cgImage).representation(
+                using: .jpeg,
+                properties: [.compressionFactor: 0.85]
+              ) else {
+            throw PhotosPreviewRequestError.couldNotEncode
+        }
+
+        try jpegData.write(to: destinationURL, options: .atomic)
+    }
+
+    static func requestPreview(
+        for asset: PHAsset,
+        representation: PhotosAssetRepresentation,
+        allowsNetworkAccess: Bool,
+        progressHandler: (@Sendable (Double) -> Void)?
+    ) async throws -> NSImage {
+        try Task.checkCancellation()
+
+        let imageManager = PHImageManager.default()
+        let requestState = PhotosImageRequestState(imageManager: imageManager)
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.resizeMode = .fast
+        options.isNetworkAccessAllowed = allowsNetworkAccess
+        options.version = representation == .original ? .original : .current
+        options.progressHandler = { fractionCompleted, _, _, _ in
+            progressHandler?(fractionCompleted)
+        }
+
+        let image = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<NSImage, Error>) in
+                let continuationState = PhotosPreviewContinuation(continuation)
+                let requestID = imageManager.requestImage(
+                    for: asset,
+                    targetSize: ContactSheetLayout.thumbnailSize,
+                    contentMode: .aspectFit,
+                    options: options
+                ) { image, info in
+                    if info?[PHImageResultIsDegradedKey] as? Bool == true {
+                        return
+                    }
+                    if info?[PHImageCancelledKey] as? Bool == true {
+                        continuationState.resume(with: .failure(PhotosPreviewRequestError.cancelled))
+                    } else if let error = info?[PHImageErrorKey] as? Error {
+                        continuationState.resume(with: .failure(error))
+                    } else if let image {
+                        continuationState.resume(with: .success(image))
+                    } else if info?[PHImageResultIsInCloudKey] as? Bool == true {
+                        continuationState.resume(with: .failure(PhotosPreviewRequestError.networkAccessRequired))
+                    } else {
+                        continuationState.resume(with: .failure(PhotosPreviewRequestError.unavailable))
+                    }
+                }
+                requestState.register(requestID: requestID)
+            }
+        } onCancel: {
+            requestState.cancel()
+        }
+
+        try Task.checkCancellation()
+        return image
+    }
+
     static func write(
         _ resource: PHAssetResource,
         to destinationURL: URL,
@@ -389,6 +886,126 @@ private extension PhotosLibraryAssetExporter {
         )
     }
 
+    static func download(
+        _ pendingExport: PendingPhotosAssetExport,
+        progressTracker: PhotosDownloadProgressTracker
+    ) async throws -> NetworkPhotosAssetExportResult {
+        let maximumAttempts = PhotosCloudRetryPolicy.maximumAttempts
+        var lastError: Error?
+
+        for attempt in 1...maximumAttempts {
+            do {
+                try Task.checkCancellation()
+                try? FileManager.default.removeItem(at: pendingExport.materializedAsset.fileURL)
+
+                let progressHandler: @Sendable (Double) -> Void = { fractionCompleted in
+                    progressTracker.update(
+                        sourceIndex: pendingExport.sourceIndex,
+                        fractionCompleted: fractionCompleted
+                    )
+                }
+
+                switch pendingExport.kind {
+                case .original(let resource):
+                    try await writeCancellable(
+                        resource,
+                        to: pendingExport.materializedAsset.fileURL,
+                        progressHandler: progressHandler
+                    )
+                case .preview(let asset):
+                    try await writePreview(
+                        for: asset,
+                        representation: pendingExport.materializedAsset.representation,
+                        to: pendingExport.materializedAsset.fileURL,
+                        allowsNetworkAccess: true,
+                        progressHandler: progressHandler
+                    )
+                }
+
+                return NetworkPhotosAssetExportResult(
+                    sourceIndex: pendingExport.sourceIndex,
+                    assetLocalIdentifier: pendingExport.materializedAsset.assetLocalIdentifier,
+                    materializedAsset: pendingExport.materializedAsset,
+                    failureReason: nil
+                )
+            } catch {
+                try? FileManager.default.removeItem(at: pendingExport.materializedAsset.fileURL)
+
+                if Task.isCancelled || error is CancellationError {
+                    throw CancellationError()
+                }
+
+                lastError = error
+                guard attempt < maximumAttempts, PhotosCloudRetryPolicy.shouldRetry(error) else {
+                    break
+                }
+
+                #if DEBUG
+                AppLogger.export.warning(
+                    "Retrying iCloud asset \(pendingExport.materializedAsset.assetLocalIdentifier, privacy: .private), attempt \(attempt + 1, privacy: .public) of \(maximumAttempts, privacy: .public)"
+                )
+                #endif
+                try await Task.sleep(nanoseconds: PhotosCloudRetryPolicy.delayNanoseconds(afterAttempt: attempt))
+            }
+        }
+
+        let error = lastError ?? PhotosPreviewRequestError.unavailable
+        return NetworkPhotosAssetExportResult(
+            sourceIndex: pendingExport.sourceIndex,
+            assetLocalIdentifier: pendingExport.materializedAsset.assetLocalIdentifier,
+            materializedAsset: nil,
+            failureReason: exportFailureReason(for: error)
+        )
+    }
+
+    static func writeCancellable(
+        _ resource: PHAssetResource,
+        to destinationURL: URL,
+        progressHandler: (@Sendable (Double) -> Void)?
+    ) async throws {
+        try Task.checkCancellation()
+
+        let resourceManager = PHAssetResourceManager.default()
+        let requestState = PhotosResourceRequestState(resourceManager: resourceManager)
+        let fileWriter = try PhotosResourceFileWriter(destinationURL: destinationURL)
+        let options = PHAssetResourceRequestOptions()
+        options.isNetworkAccessAllowed = true
+        options.progressHandler = { fractionCompleted in
+            progressHandler?(fractionCompleted)
+        }
+
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Void, Error>) in
+                let requestID = resourceManager.requestData(
+                    for: resource,
+                    options: options,
+                    dataReceivedHandler: { data in
+                        if !fileWriter.append(data) {
+                            requestState.cancel()
+                        }
+                    },
+                    completionHandler: { error in
+                        let writingError = fileWriter.finish()
+
+                        if let writingError {
+                            continuation.resume(throwing: writingError)
+                        } else if let error {
+                            continuation.resume(throwing: error)
+                        } else {
+                            continuation.resume()
+                        }
+                    }
+                )
+                requestState.register(requestID: requestID)
+            }
+        } onCancel: {
+            requestState.cancel()
+        }
+
+        try Task.checkCancellation()
+    }
+
     static func stableFallbackName(for localIdentifier: String) -> String {
         let sanitizedIdentifier = localIdentifier
             .replacingOccurrences(of: "/", with: "_")
@@ -396,10 +1013,18 @@ private extension PhotosLibraryAssetExporter {
         return sanitizedIdentifier.isEmpty ? "photos_asset" : sanitizedIdentifier
     }
 
-    static func exportFailureReason(for error: Error) -> String {
+    static func requiresNetworkAccess(_ error: Error) -> Bool {
+        if case PhotosPreviewRequestError.networkAccessRequired = error {
+            return true
+        }
+
         let nsError = error as NSError
-        if nsError.domain == PHPhotosErrorDomain,
-           PHPhotosError.Code(rawValue: nsError.code) == .networkAccessRequired {
+        return nsError.domain == PHPhotosErrorDomain
+            && PHPhotosError.Code(rawValue: nsError.code) == .networkAccessRequired
+    }
+
+    static func exportFailureReason(for error: Error) -> String {
+        if requiresNetworkAccess(error) {
             return "Original asset is stored in iCloud and network access is disabled."
         }
 

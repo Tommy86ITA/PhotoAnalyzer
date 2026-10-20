@@ -37,6 +37,7 @@ nonisolated final class MetadataCacheService: @unchecked Sendable {
 
     private let databaseQueue: DatabaseQueue?
     private let argumentsFingerprint: String
+    private let fileManager: FileManager
 
     init(
         databaseURL: URL? = nil,
@@ -44,6 +45,7 @@ nonisolated final class MetadataCacheService: @unchecked Sendable {
         analysisArguments: [String] = ExifToolTagWhitelist.analysisExportArguments
     ) {
         argumentsFingerprint = Self.fingerprint(for: analysisArguments)
+        self.fileManager = fileManager
 
         do {
             let url = databaseURL ?? Self.defaultDatabaseURL(fileManager: fileManager)
@@ -71,9 +73,28 @@ nonisolated final class MetadataCacheService: @unchecked Sendable {
         sourceKey: MetadataCacheSourceKey?,
         maximumSizeBytes: Int64
     ) -> Data? {
-        guard maximumSizeBytes > 0,
-              let databaseQueue,
-              let lookup = lookup(for: fileURL, sourceKey: sourceKey) else {
+        guard let lookup = lookup(for: fileURL, sourceKey: sourceKey) else {
+            return nil
+        }
+        return cachedMetadataData(for: lookup, maximumSizeBytes: maximumSizeBytes)
+    }
+
+    /// Reads metadata for a stable non-file source before that source is materialized locally.
+    func cachedMetadataData(
+        for sourceKey: MetadataCacheSourceKey,
+        maximumSizeBytes: Int64
+    ) -> Data? {
+        guard let lookup = lookup(for: sourceKey) else {
+            return nil
+        }
+        return cachedMetadataData(for: lookup, maximumSizeBytes: maximumSizeBytes)
+    }
+
+    private func cachedMetadataData(
+        for lookup: CacheLookup,
+        maximumSizeBytes: Int64
+    ) -> Data? {
+        guard maximumSizeBytes > 0, let databaseQueue else {
             return nil
         }
 
@@ -226,47 +247,47 @@ nonisolated final class MetadataCacheService: @unchecked Sendable {
 
     private func lookup(for fileURL: URL, sourceKey: MetadataCacheSourceKey?) -> CacheLookup? {
         if let sourceKey {
-            let signature = MetadataCacheSignature(
-                sourceKind: sourceKey.kind.rawValue,
-                sourceIdentifier: sourceKey.identifier,
-                sourceVersion: sourceKey.version,
-                filePath: nil,
-                fileSize: nil,
-                fileModificationTime: nil,
-                argumentsFingerprint: argumentsFingerprint
-            )
-            return CacheLookup(
-                cacheKey: Self.fingerprint(for: [
-                    signature.sourceKind,
-                    signature.sourceIdentifier,
-                    signature.argumentsFingerprint
-                ]),
-                signature: signature
-            )
-        }
-
-        guard let values = try? fileURL.resourceValues(forKeys: [
-            .contentModificationDateKey,
-            .fileSizeKey,
-            .isRegularFileKey
-        ]),
-              values.isRegularFile == true,
-              let fileSize = values.fileSize else {
-            return nil
+            return lookup(for: sourceKey)
         }
 
         let path = fileURL.standardizedFileURL.path
-        let modificationTime = values.contentModificationDate?.timeIntervalSince1970
+        guard let attributes = try? fileManager.attributesOfItem(atPath: path),
+              attributes[.type] as? FileAttributeType == .typeRegular,
+              let fileSize = attributes[.size] as? NSNumber else {
+            return nil
+        }
+
+        let modificationTime = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970
         let signature = MetadataCacheSignature(
             sourceKind: MetadataCacheSourceKey.SourceKind.localFile.rawValue,
             sourceIdentifier: path,
             sourceVersion: "file",
             filePath: path,
-            fileSize: Int64(fileSize),
+            fileSize: fileSize.int64Value,
             fileModificationTime: modificationTime,
             argumentsFingerprint: argumentsFingerprint
         )
 
+        return CacheLookup(
+            cacheKey: Self.fingerprint(for: [
+                signature.sourceKind,
+                signature.sourceIdentifier,
+                signature.argumentsFingerprint
+            ]),
+            signature: signature
+        )
+    }
+
+    private func lookup(for sourceKey: MetadataCacheSourceKey) -> CacheLookup? {
+        let signature = MetadataCacheSignature(
+            sourceKind: sourceKey.kind.rawValue,
+            sourceIdentifier: sourceKey.identifier,
+            sourceVersion: sourceKey.version,
+            filePath: nil,
+            fileSize: nil,
+            fileModificationTime: nil,
+            argumentsFingerprint: argumentsFingerprint
+        )
         return CacheLookup(
             cacheKey: Self.fingerprint(for: [
                 signature.sourceKind,

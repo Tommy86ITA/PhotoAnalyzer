@@ -37,37 +37,32 @@ nonisolated struct CachedExifMetadataReader: Sendable {
         sourceKey: MetadataCacheSourceKey?,
         using runner: ExifToolRunner
     ) throws -> CachedExifMetadataReadResult? {
-        let metadataData: Data
-        let isCacheHit: Bool
-
         if let cachedData = metadataCacheService.cachedMetadataData(
             for: fileURL,
             sourceKey: sourceKey,
             maximumSizeBytes: maximumSizeBytes
-        ) {
-            metadataData = cachedData
-            isCacheHit = true
-        } else {
-            metadataData = try exifToolService.extractAnalysisMetadataData(from: fileURL, using: runner)
-            isCacheHit = false
+        ), let cachedMetadata = try? exifToolService.decodeAnalysisMetadata(from: cachedData) {
+            return CachedExifMetadataReadResult(
+                metadata: cachedMetadata,
+                isCacheHit: true
+            )
         }
 
+        let metadataData = try exifToolService.extractAnalysisMetadataData(from: fileURL, using: runner)
         guard let metadata = try exifToolService.decodeAnalysisMetadata(from: metadataData) else {
             return nil
         }
 
-        if !isCacheHit {
-            metadataCacheService.storeMetadataData(
-                metadataData,
-                for: fileURL,
-                sourceKey: sourceKey,
-                maximumSizeBytes: maximumSizeBytes
-            )
-        }
+        metadataCacheService.storeMetadataData(
+            metadataData,
+            for: fileURL,
+            sourceKey: sourceKey,
+            maximumSizeBytes: maximumSizeBytes
+        )
 
         return CachedExifMetadataReadResult(
             metadata: metadata,
-            isCacheHit: isCacheHit
+            isCacheHit: false
         )
     }
 }

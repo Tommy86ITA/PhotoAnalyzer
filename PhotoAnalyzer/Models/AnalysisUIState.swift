@@ -41,7 +41,7 @@ enum AnalysisStatus {
 }
 
 /// Detailed operation phase shown in the status footer.
-enum AnalysisPhase: Equatable, Sendable {
+nonisolated enum AnalysisPhase: Equatable, Sendable {
     case ready
     case noFolderSelected
     case noOutputFolderSelected

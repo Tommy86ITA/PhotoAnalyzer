@@ -66,7 +66,7 @@ struct PhotosAnalysisPipelineServiceTests {
         )
         let pipelineService = AnalysisPipelineService(dependencies: dependencies)
         let service = PhotosAnalysisPipelineService(
-            materializeSelection: { selection, _, progressHandler in
+            materializeSelection: { selection, _, _, progressHandler, _ in
                 materializedSelections.append(selection)
                 let snapshot = ProgressSnapshot(
                     completedUnitCount: 1,
@@ -102,7 +102,8 @@ struct PhotosAnalysisPipelineServiceTests {
                     workspace: workspace
                 )
             },
-            pipelineService: pipelineService
+            pipelineService: pipelineService,
+            progressiveAnalysisEnabled: false
         )
         let selection = PhotosSelection(
             mode: .album(localIdentifier: "album-1", name: "Favorites"),

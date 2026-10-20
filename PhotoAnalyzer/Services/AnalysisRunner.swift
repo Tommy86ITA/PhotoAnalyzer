@@ -55,6 +55,7 @@ struct AnalysisRunner {
         outputFolderURL: URL,
         datasetName: String,
         metadataCacheMaximumSizeMB: Int,
+        maximumConcurrentDownloads: Int,
         exportDiagnosticReports: Bool,
         progressHandler: @escaping @Sendable (AnalysisProgress) -> Void
     ) async throws -> AnalysisRunResult {
@@ -63,6 +64,9 @@ struct AnalysisRunner {
                 selection: selection,
                 outputFolderURL: outputFolderURL,
                 datasetName: datasetName,
+                exportOptions: PhotosLibraryExportOptions(
+                    maximumConcurrentDownloads: maximumConcurrentDownloads
+                ),
                 metadataCacheMaximumSizeMB: metadataCacheMaximumSizeMB,
                 exportDiagnosticReports: exportDiagnosticReports
             ),

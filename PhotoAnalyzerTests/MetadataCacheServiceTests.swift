@@ -60,6 +60,33 @@ struct MetadataCacheServiceTests {
         #expect(service.usage().entryCount == 0)
     }
 
+    @Test func readsPhotosMetadataBeforeAssetIsMaterialized() throws {
+        let fixture = try makeFixture()
+        defer {
+            try? FileManager.default.removeItem(at: fixture.directoryURL)
+        }
+
+        let service = MetadataCacheService(databaseURL: fixture.databaseURL)
+        let payload = Data(#"[{"SourceFile":"photos://asset/test","File:FileName":"photo.heic"}]"#.utf8)
+        let sourceKey = MetadataCacheSourceKey.photosAsset(
+            localIdentifier: "asset/local/identifier",
+            representation: .current,
+            modificationDate: Date(timeIntervalSince1970: 123)
+        )
+
+        service.storeMetadataData(
+            payload,
+            for: fixture.fileURL,
+            sourceKey: sourceKey,
+            maximumSizeBytes: 1_000_000
+        )
+
+        #expect(service.cachedMetadataData(
+            for: sourceKey,
+            maximumSizeBytes: 1_000_000
+        ) == payload)
+    }
+
     private func makeFixture() throws -> CacheFixture {
         let directoryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

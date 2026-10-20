@@ -9,6 +9,17 @@ import SwiftUI
 
 @main
 struct PhotoAnalyzerApp: App {
+    init() {
+        let abandonedWorkspaceURLs = TemporaryAssetWorkspace.abandonedWorkspaceURLs()
+        guard !abandonedWorkspaceURLs.isEmpty else {
+            return
+        }
+
+        Task.detached(priority: .utility) {
+            TemporaryAssetWorkspace.cleanupAbandonedWorkspaces(abandonedWorkspaceURLs)
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

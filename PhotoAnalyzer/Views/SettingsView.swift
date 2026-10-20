@@ -11,6 +11,7 @@ import SwiftUI
 struct SettingsView: View {
     @Binding var useUnmodifiedPhotosOriginals: Bool
     @Binding var downloadMissingPhotosOriginals: Bool
+    @Binding var maximumConcurrentPhotosDownloads: Int
     @Binding var metadataCacheMaximumSizeMB: Int
     @Binding var exportDiagnosticReports: Bool
     let metadataCacheUsage: MetadataCacheUsage
@@ -57,24 +58,11 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Photos Library") {
-                    Toggle("Use unmodified originals", isOn: $useUnmodifiedPhotosOriginals)
-                        .help("Export original, unedited Photos assets when available")
-                    Toggle("Download missing iCloud originals", isOn: $downloadMissingPhotosOriginals)
-                        .help("Allow Photos to download missing originals from iCloud during analysis")
-
-                    if downloadMissingPhotosOriginals {
-                        Label {
-                            Text("Downloading high-resolution files from iCloud can make analysis slower. Be careful when using metered or limited network connections.")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        } icon: {
-                            Image(systemName: "exclamationmark.triangle")
-                                .foregroundStyle(.yellow)
-                        }
-                    }
-                }
+                PhotosLibrarySettingsSection(
+                    useUnmodifiedOriginals: $useUnmodifiedPhotosOriginals,
+                    downloadMissingOriginals: $downloadMissingPhotosOriginals,
+                    maximumConcurrentDownloads: $maximumConcurrentPhotosDownloads
+                )
 
                 MetadataCacheSettingsSection(
                     maximumSizeMB: $metadataCacheMaximumSizeMB,
@@ -103,5 +91,63 @@ struct SettingsView: View {
 
     private var outputFolderText: String {
         outputFolderURL.path
+    }
+}
+
+private struct PhotosLibrarySettingsSection: View {
+    @Binding var useUnmodifiedOriginals: Bool
+    @Binding var downloadMissingOriginals: Bool
+    @Binding var maximumConcurrentDownloads: Int
+
+    var body: some View {
+        Section("Photos Library") {
+            Toggle("Use unmodified originals", isOn: $useUnmodifiedOriginals)
+                .help("Export original, unedited Photos assets when available")
+
+            Toggle("Download missing iCloud originals", isOn: $downloadMissingOriginals)
+                .help("Allow Photos to download missing originals from iCloud during analysis")
+
+            if downloadMissingOriginals {
+                Stepper(
+                    value: $maximumConcurrentDownloads,
+                    in: PhotosDownloadConcurrency.allowedRange
+                ) {
+                    Text("Simultaneous iCloud downloads: \(maximumConcurrentDownloads)")
+                }
+                .help("Set how many missing Photos originals PhotoAnalyzer may download at the same time")
+
+                Text("Recommended: \(PhotosDownloadConcurrency.recommended). Higher values may not improve performance because Photos and iCloud can limit requests automatically.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if maximumConcurrentDownloads >= PhotosDownloadConcurrency.warningThreshold {
+                    Label {
+                        Text("High concurrency can increase network, memory, and temporary disk usage. Downloads may also become less reliable.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.yellow)
+                    }
+                } else {
+                    Label {
+                        Text("Downloading high-resolution files from iCloud can make analysis slower. Be careful when using metered or limited network connections.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundStyle(.yellow)
+                    }
+                }
+            }
+        }
+        .onAppear {
+            maximumConcurrentDownloads = PhotosDownloadConcurrency.clamped(
+                maximumConcurrentDownloads
+            )
+        }
     }
 }

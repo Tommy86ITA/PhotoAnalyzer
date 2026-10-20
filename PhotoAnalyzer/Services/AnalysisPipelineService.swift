@@ -162,12 +162,14 @@ nonisolated struct AnalysisPipelineService: Sendable {
             packagePaths: packagePaths,
             completedPipelineUnitCount: completedPipelineUnitCount,
             totalPipelineUnitCount: pipelineUnitCount,
+            preanalyzedResult: nil,
             progressHandler: progressHandler
         )
     }
 
     func runPreparedFiles(
         request: PreparedAnalysisPipelineRequest,
+        preanalyzedResult: FolderAnalysisResult? = nil,
         progressHandler: ProgressHandler?
     ) async throws -> AnalysisPipelineResult {
         let pipelineUnitCount = preparedPipelineUnitCount(for: request.fileURLs.count)
@@ -198,6 +200,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
             packagePaths: packagePaths,
             completedPipelineUnitCount: 0,
             totalPipelineUnitCount: pipelineUnitCount,
+            preanalyzedResult: preanalyzedResult,
             progressHandler: progressHandler
         )
     }
@@ -213,6 +216,7 @@ nonisolated struct AnalysisPipelineService: Sendable {
         packagePaths: AIAnalysisPackagePaths,
         completedPipelineUnitCount initialCompletedPipelineUnitCount: Int64,
         totalPipelineUnitCount: Int64,
+        preanalyzedResult: FolderAnalysisResult?,
         progressHandler: ProgressHandler?
     ) async throws -> AnalysisPipelineResult {
         let fileURLs = request.fileURLs
@@ -220,6 +224,11 @@ nonisolated struct AnalysisPipelineService: Sendable {
         guard !fileURLs.isEmpty else {
             throw AnalysisPipelineError.noSupportedFiles
         }
+
+        try DiskSpacePreflightService().requireAvailableSpace(
+            at: request.outputFolderURL ?? request.sourceFolderURL,
+            requirement: AnalysisDiskSpaceEstimator.outputRequirement(photoCount: fileURLs.count)
+        )
 
         var completedPipelineUnitCount = initialCompletedPipelineUnitCount
 
@@ -230,13 +239,18 @@ nonisolated struct AnalysisPipelineService: Sendable {
             phase: .readingMetadata,
             progressHandler: progressHandler
         )
-        let folderAnalysisResult = try await runCancellableDetached {
-            try await dependencies.analyzeFiles(
-                fileURLs,
-                request.metadataCacheSourceKeyByFileURL,
-                request.metadataCacheMaximumSizeMB,
-                metadataProgressHandler
-            )
+        let folderAnalysisResult: FolderAnalysisResult
+        if let preanalyzedResult {
+            folderAnalysisResult = preanalyzedResult
+        } else {
+            folderAnalysisResult = try await runCancellableDetached {
+                try await dependencies.analyzeFiles(
+                    fileURLs,
+                    request.metadataCacheSourceKeyByFileURL,
+                    request.metadataCacheMaximumSizeMB,
+                    metadataProgressHandler
+                )
+            }
         }
         try Task.checkCancellation()
         completedPipelineUnitCount += metadataProgressUnitCount
