@@ -408,8 +408,11 @@ final class AnalysisCoordinator {
                 metadataCacheMaximumSizeMB: metadataCacheMaximumSizeMB,
                 exportDiagnosticReports: exportDiagnosticReports,
                 progressHandler: { [weak self] progress in
-                    Task { [weak self] in
-                        await self?.applyPipelineProgress(progress)
+                    guard let self else {
+                        return
+                    }
+                    Task { @MainActor in
+                        self.applyPipelineProgress(progress)
                     }
                 }
             )
@@ -463,8 +466,11 @@ final class AnalysisCoordinator {
                 maximumConcurrentDownloads: maximumConcurrentDownloads,
                 exportDiagnosticReports: exportDiagnosticReports,
                 progressHandler: { [weak self] progress in
-                    Task { [weak self] in
-                        await self?.applyPipelineProgress(progress)
+                    guard let self else {
+                        return
+                    }
+                    Task { @MainActor in
+                        self.applyPipelineProgress(progress)
                     }
                 }
             )
